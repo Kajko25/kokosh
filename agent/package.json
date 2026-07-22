@@ -8,6 +8,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@base-org/account": "^2.5.7",
     "@coinbase/x402": "^2.1.0",
     "@x402/core": "^2.19.0",
     "@x402/express": "^2.19.0",

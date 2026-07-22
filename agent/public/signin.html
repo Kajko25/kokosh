@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kokosh — Sign in with Base</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 4rem auto; padding: 0 1rem; background: #0b0b12; color: #eee; }
+    h1 { font-size: 1.3rem; }
+    #status { margin-top: 1.5rem; padding: 1rem; border-radius: 8px; background: #1a1a2e; white-space: pre-wrap; word-break: break-all; font-size: 0.85rem; }
+    button { background: #0000FF; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>Kokosh — Sign in with Base</h1>
+  <p>kajko24.base.eth wallet-hygiene agent. Sign in creates or uses your Base Account (passkey) — no seed phrase.</p>
+  <button id="signin">Sign in with Base</button>
+  <div id="status"></div>
+
+  <script type="module">
+    import { createBaseAccountSDK } from "https://esm.sh/@base-org/account@2.5.7";
+
+    const statusEl = document.getElementById("status");
+    const btn = document.getElementById("signin");
+
+    const sdk = createBaseAccountSDK({
+      appName: "Kokosh",
+      appLogoUrl: "https://kokosh-agent.vercel.app/favicon.ico",
+      appChainIds: [8453],
+    });
+    const provider = sdk.getProvider();
+
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      statusEl.textContent = "Requesting nonce...";
+      try {
+        const nonceRes = await fetch("/auth/nonce");
+        const { nonce } = await nonceRes.json();
+
+        statusEl.textContent = "Opening Base Account popup...";
+        const { accounts } = await provider.request({
+          method: "wallet_connect",
+          params: [{
+            version: "1",
+            capabilities: {
+              signInWithEthereum: { nonce, chainId: "0x2105" },
+            },
+          }],
+        });
+
+        const { address } = accounts[0];
+        const { message, signature } = accounts[0].capabilities.signInWithEthereum;
+
+        statusEl.textContent = "Verifying with Kokosh backend...";
+        const verifyRes = await fetch("/auth/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address, message, signature }),
+        });
+        const result = await verifyRes.json();
+
+        statusEl.textContent = verifyRes.ok
+          ? `Signed in.\naddress: ${address}\n\n${JSON.stringify(result, null, 2)}`
+          : `Verification failed.\n${JSON.stringify(result, null, 2)}`;
+      } catch (err) {
+        statusEl.textContent = "Error: " + (err?.message ?? String(err));
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

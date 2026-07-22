@@ -1,8 +1,14 @@
 import express from "express";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { classifyToken } from "./lib/scamHeuristics.mjs";
 import { fetchTokenHoldings } from "./lib/blockscout.mjs";
 import { readExposureReport } from "./lib/exposure.mjs";
 import { buildAuditPaymentMiddleware } from "./lib/x402Seller.mjs";
+import { issueNonce, verifySignIn } from "./lib/siwb.mjs";
+import { validatePayerInfo } from "./lib/payValidate.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const WALLET = "0x2984Bb4953cfCE2cEc957388BE686D6c38779234";
 const MAX_LAG_SECONDS = 60;
@@ -32,10 +38,38 @@ async function computeAudit() {
 export function makeApp({ client, now = () => Date.now(), cdp } = {}) {
   const app = express();
   app.disable("x-powered-by");
+  app.use(express.json());
+  app.use((req, res, next) => {
+    res.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    next();
+  });
+  app.use(express.static(join(__dirname, "public")));
 
   if (cdp?.apiKeyId && cdp?.apiKeySecret) {
     app.use(buildAuditPaymentMiddleware({ cdpApiKeyId: cdp.apiKeyId, cdpApiKeySecret: cdp.apiKeySecret }));
   }
+
+  app.get("/auth/nonce", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.json({ nonce: issueNonce() });
+  });
+
+  app.post("/auth/verify", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const { address, message, signature } = req.body ?? {};
+    if (!address || !message || !signature) {
+      res.status(400).json({ error: "missing_fields" });
+      return;
+    }
+    const result = await verifySignIn({ address, message, signature });
+    res.status(result.ok ? 200 : 401).json(result);
+  });
+
+  app.post("/pay/validate", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const { ok, response } = validatePayerInfo(req.body);
+    res.status(ok ? 200 : 400).json(response);
+  });
 
   app.get("/healthz", async (req, res) => {
     res.set("Cache-Control", "no-store");
