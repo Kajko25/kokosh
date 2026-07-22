@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "viem": "^2.21.0"
+    "ox": "^0.11.3",
+    "permissionless": "^0.3.7",
+    "viem": "^2.55.7"
   }
 }
