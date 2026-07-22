@@ -1,0 +1,27 @@
+# Foundry
+out/
+cache/
+broadcast/
+lcov.info
+
+# Dependencies (we explicitly do NOT vendor third-party libs;
+# this is here only for any future Foundry-managed installs).
+# Anchored to root so it does not match test/lib/ (per-contract base tests).
+/lib/
+
+# Environment
+.env
+.env.*
+!.env.example
+!.env.template
+
+script/smoke/.venv/
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/

@@ -1,0 +1,24 @@
+{
+  "name": "kokosh-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@coinbase/x402": "^2.1.0",
+    "@x402/core": "^2.19.0",
+    "@x402/express": "^2.19.0",
+    "express": "^4.21.0",
+    "viem": "^2.21.0"
+  },
+  "allowScripts": {
+    "@coinbase/x402@2.1.0": true
+  },
+  "devDependencies": {
+    "@x402/evm": "^2.19.0",
+    "@x402/fetch": "^2.19.0"
+  }
+}

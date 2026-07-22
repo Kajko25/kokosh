@@ -1,0 +1,19 @@
+{
+  "owner": "0x2984Bb4953cfCE2cEc957388BE686D6c38779234",
+  "scannedAt": "2026-07-22T21:17:01.424Z",
+  "erc20Live": [
+    {
+      "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "symbol": "USDC",
+      "spender": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "amount": "11000000"
+    },
+    {
+      "token": "0xb20000000000000000000088fcF783EF6b738833",
+      "symbol": "MIR",
+      "spender": "0xf2035170A3B5106DBD4c98853D3C9E52c77eA4E6",
+      "amount": "2000000000000000000"
+    }
+  ],
+  "permit2Live": []
+}

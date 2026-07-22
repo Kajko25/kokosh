@@ -1,0 +1,225 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Build
+        run: forge build
+
+      - name: Contract sizes (informational)
+        run: forge build --sizes || true
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Run tests
+        run: forge test -v
+
+  forge-coverage:
+    name: Forge Coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Generate lcov report
+        run: forge coverage --no-match-coverage "(\.t\.sol|Test\.sol)$" --report lcov
+
+      - name: Capture coverage summary
+        id: summary
+        run: |
+          raw=$(forge coverage --no-match-coverage "(\.t\.sol|Test\.sol)$" 2>/dev/null | grep "^|" || echo "")
+
+          if [ -z "$raw" ]; then
+            status="⚠️ Coverage data unavailable."
+            table="_(no coverage data)_"
+          else
+            # Per-row color: 🟢 ≥99% on all metrics, 🟡 ≥95%, 🔴 below 95%
+            table=$(echo "$raw" | awk -v GREEN="🟢" -v YELLOW="🟡" -v RED="🔴" -F'|' '
+              BEGIN {
+                print "| File | Lines | Stmts | Branches | Funcs |"
+                print "|------|-------|-------|----------|-------|"
+              }
+              /\+/ { next }
+              /% Lines/ { next }
+              NF < 5 { next }
+              {
+                file = $2
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", file)
+                if (file == "") next
+                for (i = 3; i <= 6; i++) {
+                  match($i, /[0-9]+\.[0-9]+%/)
+                  pct[i-2] = substr($i, RSTART, RLENGTH)
+                }
+                gsub(/^test\/lib\/mocks\//, "", file)
+                gsub(/^src\/lib\//, "", file)
+                if (file == "Total") {
+                  printf "| **%s** | **%s** | **%s** | **%s** | **%s** |\n", file, pct[1], pct[2], pct[3], pct[4]
+                } else {
+                  min_pct = 999
+                  for (j = 1; j <= 4; j++) {
+                    val = pct[j]; gsub(/%/, "", val); val += 0
+                    if (val < min_pct) min_pct = val
+                  }
+                  if (min_pct >= 99)      emoji = GREEN
+                  else if (min_pct >= 95) emoji = YELLOW
+                  else                    emoji = RED
+                  printf "| %s %s | %s | %s | %s | %s |\n", emoji, file, pct[1], pct[2], pct[3], pct[4]
+                }
+              }
+            ')
+
+            # Status line uses same thresholds applied to Total row minimum
+            total=$(echo "$raw" | grep "^| Total" || echo "")
+            min_total=$(echo "$total" | grep -oE "[0-9]+\.[0-9]+%" | sed 's/%//' | sort -n | head -1)
+            status=$(echo "$min_total" | awk '{
+              if      ($1 >= 99) print "🟢 ≥99% across all metrics."
+              else if ($1 >= 95) print "🟡 ≥95% across all metrics \xe2\x80\x94 some metrics below 99%."
+              else               print "🔴 Below 95% on one or more metrics."
+            }')
+            [ -z "$status" ] && status="⚠️ Coverage data unavailable."
+          fi
+
+          {
+            echo "status=$status"
+            echo "table<<__EOF__"
+            printf "%s\n" "$table"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload lcov report
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info
+
+      - name: Find existing comment
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: <!-- forge-coverage -->
+
+      - name: Post or update PR comment
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            <!-- forge-coverage -->
+            ### 📊 Forge Coverage (`src/lib/`)
+
+            ${{ steps.summary.outputs.status }}
+
+            ${{ steps.summary.outputs.table }}
+
+            Full report: [download artifact](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}). To browse locally: `make coverage` (runs forge coverage + genhtml + opens the HTML report).
+
+  interface-coverage:
+    name: Interface Coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Run interface coverage check
+        id: check
+        run: |
+          set +e
+          output=$(python3 script/check-coverage.py 2>&1)
+          exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          {
+            echo "output<<__EOF__"
+            echo "$output"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+          exit $exit_code
+        continue-on-error: true
+
+      - name: Find existing comment
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: <!-- interface-coverage -->
+
+      - name: Post or update PR comment
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            <!-- interface-coverage -->
+            ### Interface Coverage
+
+            ${{ steps.check.outputs.exit_code == '0' && '✅ All interface functions have test coverage.' || '❌ Interface functions with no test coverage found.' }}
+
+            ${{ steps.check.outputs.exit_code != '0' && format('```\n{0}\n```', steps.check.outputs.output) || '' }}
+
+      - name: Fail if gaps found
+        if: steps.check.outputs.exit_code != '0'
+        run: exit 1
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Check formatting
+        run: forge fmt --check
