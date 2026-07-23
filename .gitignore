@@ -3,3 +3,5 @@ node_modules/
 .env.local
 dist/
 .vercel/
+docs/sentinel-cron.log
+docs/sentinel-actions-today.json
