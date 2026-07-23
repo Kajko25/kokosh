@@ -130,20 +130,29 @@ Courier burner (operational relay wallet): `0xf2035170A3B5106DBD4c98853D3C9E52c7
   - **Executed live**: tx `0x876cd948cf53829fa5494aa53c79b40baa6cad4e7202de9e3f08b5e0e052d481`, `ExecutionSuccess` event carries the exact computed tx hash. Verified independently: Safe `nonce()` `0`→`1`, Safe ETH balance `0.0003`→`0.0002` (exactly the 0.0001 sent), courier balance up by the same amount.
   - **Gap closed**: 0x2984 now has a working, exercised Safe multisig, same as amberforge — deployment address and owners are entirely fresh to this cluster.
 
+## Gap-closing — Aave v3 borrow/repay
+
+- **2026-07-23**: **Full Aave v3 supply→borrow→repay→withdraw lifecycle, live on mainnet — a third distinct lending protocol** alongside amberforge's Moonwell and 0x6D48's Compound III. Pool `0xA238Dd80C259a72e81d7e4664a9801593F98d1c5` (via `@bgd-labs/aave-address-book`, confirmed real code on-chain first, `cast codesize` → 1933 bytes). Chose the inverse combination from 0x6D48's Compound III demo (collateral=WETH, debt=USDC) for variety: **collateral=USDC, debt=WETH**.
+  - `USDC.approve(Pool, 5 USDC)` → `Pool.supply(USDC, 5e6, 0x2984, 0)` — tx `0x536acfd650b0f8df204f0db45055a9b7c7845a1629fa962cf2f4a0231b69978e`, aUSDC minted, confirmed via `balanceOf`.
+  - **Real gotcha hit and fixed**: `Pool.borrow(WETH, 0.0003e18, 2, 0, 0x2984)` reverted `LtvValidationFailed` even though `5 USDC` collateral easily covers a `~$0.6` borrow. `getUserAccountData` showed `totalCollateralBase: 0` right after the supply — the USDC deposit was **not automatically flagged as collateral** on this Aave v3 listing (unlike the common assumption that first-supply auto-enables collateral; Aave's `validateAutomaticUseAsCollateral` skips the auto-enable in some reserve configurations). Fixed with an explicit `Pool.setUserUseReserveAsCollateral(USDC, true)` tx `0x3b90bd78b582992d0153744c5f2fa8db9711d41c436ceada3e79bd4da45acb8d` — `getUserAccountData` then showed real collateral/borrow-power numbers, and the borrow succeeded on retry.
+  - `Pool.borrow(WETH, 0.0003e18, variableRate, 0, 0x2984)` — tx `0x1b190a9beb4d30746ea4e488f76f4ce3b729e66cebfee5c905de72f1a78315da`, WETH balance confirmed +0.0003, variable debt token minted.
+  - Topped up with a small extra `WETH.deposit()` wrap (interest had already accrued past the exact borrowed amount by the time of repay — same "interest ticks even before you've done anything else" lesson as the ERC-4626 vault work), then `WETH.approve(Pool, ...)` → `Pool.repay(WETH, type(uint256).max, variableRate, 0x2984)` — tx `0x2d91a980a670bcd1cd3e7240f91221ef34131eb0b7022dd22dd5307f2266098d`, debt token balance confirmed `0` after.
+  - `Pool.withdraw(USDC, type(uint256).max, 0x2984)` — tx `0x676de04a376c0b6c6011fe8072caf1678d240a44526dbb2aa75b1f21b154beec`. Verified independently: aUSDC `0`, USDC balance `10.191652` (up from the pre-supply `10.115466` — supply interest earned exceeded the tiny borrow interest paid), WETH balance back down to just the unused top-up dust.
+  - **Gap closed**: 0x2984 now has a real borrow/repay cycle, on a protocol neither sibling used.
+
 
 **Done**: Stages 0–5 complete (Ledger signing, Waypoint, MIRMIL/B20 tour, Waymarks, subdomain, Multicall3, Flashblocks, approval scan, ERC-6551 TBA, EIP-2612 permit, ERC-4626 vault, Coinbase Verification, Kokosh agent live + ERC-8004 agentId 59633, x402 seller+buyer both proven on mainnet). Stage 6a done (ERC-4337 + USDC-only gas via Pimlico). Stage 6b fully complete: Base Account+passkey (`0x713116b0117288e8Ba3206aA9BFC3e587fe9C472`), SIWB, Base Pay + Private Profile Vault, sub account + popup-free signing, spend permission grant→charge→revoke, and prolink encode→decode→execute — all proven live on mainnet. Stage 6c complete: Base MCP connected to the same Base Account, send/sign/batch/swap all proven live, and the x402 payment through it actually succeeded — correcting (not just confirming) the smart-account-vs-x402 risk flagged in PR #148 (now updated, commit `765a751`). Bug-report batch filed: [base/docs#1730](https://github.com/base/docs/issues/1730) and [base/account-sdk#368](https://github.com/base/account-sdk/issues/368). **Stage 4a now complete too**: both live approvals actually revoked (not just scanned), `ApprovalHygiene` EAS schema + attestation registered attesting to the real revoke txs.
 
-**Cross-cluster gap audit (2026-07-23)** found several things 0x23/0x6D48 have done that 0x2984 hasn't. Closed so far: revoke-the-scanned-approvals, and now Safe multisig (both above). **Still open, in priority order the user is working through them:**
-1. **Actual DeFi borrow/repay** — 0x2984 only did an ERC-4626 vault deposit/redeem; both siblings did a real borrow+repay cycle (0x23 via Moonwell, 0x6D48 via Compound III/Comet). Pick a third protocol/mechanism per the cluster-isolation habit.
-2. **Governance delegation** — both siblings self-delegated on some ERC20Votes-capable token they held; 0x2984 hasn't delegated anything.
-3. **ERC-8004 Reputation Registry** — 0x2984 registered Identity but never touched Reputation (`giveFeedback` etc.); both siblings did.
-4. **L1→L2 deposit direction** — 0x2984 only ever did the withdrawal (L2→L1) direction; both siblings did both directions.
-5. **Autonomous scheduled agent loop** — both siblings built a cron-driven observe→decide→act loop (jittered, stand-down logic) for their agent; Kokosh is request/response-only (paid `/audit`), no autonomous loop.
+**Cross-cluster gap audit (2026-07-23)** found several things 0x23/0x6D48 have done that 0x2984 hasn't. Closed so far: revoke-the-scanned-approvals, Safe multisig, and now the Aave v3 borrow/repay cycle (all above). **Still open, in priority order the user is working through them:**
+1. **Governance delegation** — both siblings self-delegated on some ERC20Votes-capable token they held; 0x2984 hasn't delegated anything.
+2. **ERC-8004 Reputation Registry** — 0x2984 registered Identity but never touched Reputation (`giveFeedback` etc.); both siblings did.
+3. **L1→L2 deposit direction** — 0x2984 only ever did the withdrawal (L2→L1) direction; both siblings did both directions.
+4. **Autonomous scheduled agent loop** — both siblings built a cron-driven observe→decide→act loop (jittered, stand-down logic) for their agent; Kokosh is request/response-only (paid `/audit`), no autonomous loop.
 
 Not on this list but worth remembering: Stage 7's Solana return leg needs **manual** `prove-message`/`relay-message` (per 0x6D48's own experience — ~65min root wait, unlike the automatic relay on the outbound leg with `--pay-for-relay`).
 
 **Open for next session**:
-1. Continue the gap list above (DeFi borrow/repay next, per the user's stated order).
+1. Continue the gap list above (governance delegation next, per the user's stated order).
 2. Stage 7 remainder (L1 withdrawal finalize once matured, Solana return-leg prove+finalize, Base Ledgers if granted) and Stage 8 (docs, Builder Rewards, Ecosystem Directory PR, grant draft) not started.
 3. PR #148 (`base/skills`), docs#1730, and account-sdk#368 are all filed/updated and awaiting upstream review — no action needed until maintainers respond.
 4. Base Ledgers early-access request (Stage 0) — still pending Coinbase's response, no action needed until they respond.
