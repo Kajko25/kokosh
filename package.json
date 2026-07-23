@@ -4,6 +4,7 @@
   "type": "module",
   "dependencies": {
     "@base-org/account": "^2.5.7",
+    "@safe-global/safe-deployments": "^1.37.60",
     "ox": "^0.11.3",
     "permissionless": "^0.3.7",
     "viem": "^2.55.7"
