@@ -1,0 +1,13 @@
+{
+  "lastScannedBlock": "49009689",
+  "lastRunAt": "2026-07-23T12:12:07.841Z",
+  "alertedApprovals": [],
+  "knownFlaggedTokens": [
+    "0x125a7410ea1ca56c1d18e4d6bb442627800bc9dd",
+    "0x538d64e2b0820cd70d37e12212881cb94f807c17",
+    "0x81a24fb968137791fd68e1a691225c5199a181cb",
+    "0x1f54305fb775485074ee9fe0e9b86510a18553d4",
+    "0xa4c26bc7067d7b2ca1c66d2b37d65640bd610139",
+    "0x9053a44faba4d7a5d71dcd64cf4de73554888ed3"
+  ]
+}
