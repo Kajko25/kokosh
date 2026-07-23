@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kokosh — Prolink</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 4rem auto; padding: 0 1rem; background: #0b0b12; color: #eee; }
+    h1 { font-size: 1.3rem; }
+    #status { margin-top: 1.5rem; padding: 1rem; border-radius: 8px; background: #1a1a2e; white-space: pre-wrap; word-break: break-all; font-size: 0.85rem; }
+    button { background: #0000FF; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>Kokosh — Prolink payment request</h1>
+  <p>Decodes the <code>p</code> query param (a Base Account prolink), validates it against an
+  allowlist, previews the call, then executes it from your Base Account on approval.</p>
+  <div id="preview"></div>
+  <button id="run" disabled>Decoding...</button>
+  <div id="status"></div>
+
+  <script type="module">
+    import { createBaseAccountSDK } from "https://esm.sh/@base-org/account@2.5.7";
+    import { decodeProlink } from "https://esm.sh/@base-org/account@2.5.7/prolink";
+    import { decodeFunctionData, formatUnits, getAddress } from "https://esm.sh/viem@2.21.0";
+
+    const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+    const ALLOWED_CONTRACTS = [USDC];
+
+    const previewEl = document.getElementById("preview");
+    const statusEl = document.getElementById("status");
+    const btn = document.getElementById("run");
+
+    const sdk = createBaseAccountSDK({
+      appName: "Kokosh",
+      appLogoUrl: "https://kokosh-agent.vercel.app/favicon.ico",
+      appChainIds: [8453],
+    });
+    const provider = sdk.getProvider();
+
+    const p = new URL(window.location.href).searchParams.get("p");
+    if (!p) {
+      previewEl.textContent = "No prolink (?p=...) in the URL.";
+      btn.remove();
+    } else {
+      let decoded;
+      try {
+        decoded = await decodeProlink(p);
+
+        // Validate before ever offering to execute.
+        if (decoded.method !== "wallet_sendCalls") throw new Error(`unexpected method: ${decoded.method}`);
+        const callParams = decoded.params[0];
+        if (Number.parseInt(callParams.chainId, 16) !== 8453) throw new Error("wrong chain, expected Base mainnet");
+        for (const call of callParams.calls) {
+          if (!ALLOWED_CONTRACTS.includes(getAddress(call.to))) {
+            throw new Error(`untrusted contract: ${call.to}`);
+          }
+        }
+
+        const lines = callParams.calls.map((call) => {
+          const { functionName, args } = decodeFunctionData({
+            abi: [{ type: "function", name: "transfer", inputs: [{ type: "address" }, { type: "uint256" }], outputs: [{ type: "bool" }] }],
+            data: call.data,
+          });
+          return `${functionName}(${args[0]}, ${formatUnits(args[1], 6)} USDC) on ${call.to}`;
+        });
+        previewEl.textContent = "Decoded and validated:\n" + lines.join("\n");
+        btn.textContent = "Approve and send";
+        btn.disabled = false;
+
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          statusEl.textContent = "Connecting Base Account...";
+          try {
+            const { accounts } = await provider.request({ method: "wallet_connect", params: [{ version: "1" }] });
+            // A payment-request prolink is encoded without a sender (the requester doesn't
+            // know who will open it) — wallet_sendCalls needs params[0].from set to the
+            // connected account, or the wallet rejects with "account ... not authorized".
+            const sendParams = [{ ...decoded.params[0], from: accounts[0].address }];
+            statusEl.textContent = "Sending...";
+            const result = await provider.request({ method: decoded.method, params: sendParams });
+            statusEl.textContent = "Sent.\n" + JSON.stringify(result, null, 2);
+          } catch (err) {
+            statusEl.textContent = "Error: " + (err?.message ?? String(err));
+            btn.disabled = false;
+          }
+        });
+      } catch (err) {
+        previewEl.textContent = "Rejected: " + (err?.message ?? String(err));
+        btn.remove();
+      }
+    }
+  </script>
+</body>
+</html>
