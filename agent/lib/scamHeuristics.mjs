@@ -9,9 +9,20 @@ const CLAIM_PATTERN = /\bclaim\b|\buntil\b|\bexpires?\b|\bvisit\b|\bairdrop\b/i;
 // Common Latin-lookalike confusable ranges (Cyrillic, Greek) that show up in ticker spoofing.
 const HOMOGLYPH_PATTERN = /[Ѐ-ӿͰ-Ͽ]/;
 
-const KNOWN_TICKERS = ["AERO", "USDC", "WETH", "ETH", "USDT", "USD0", "AAVE"];
+// Canonical Base mainnet contract addresses for well-known tickers, so an exact ticker
+// match from an unlisted contract gets flagged instead of trusted at face value. Found via
+// a real miss: a token in this wallet at 0x9053A44f...554888eD3 is symbol/name "AAVE"/"AAVE"
+// with a 2.1B total supply (real AAVE's global supply is ~16M) — a scam, but the old logic
+// only compared strings and explicitly required the symbol to differ from the known ticker,
+// so an exact-symbol copy (the simplest and most common impersonation) was never flagged.
+const KNOWN_TICKER_ADDRESSES = {
+  AERO: "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
+  USDC: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+  WETH: "0x4200000000000000000000000000000000000006",
+  AAVE: "0x63706e401c06ac8513145b7687a14804d17f814b",
+};
 
-export function classifyToken({ name = "", symbol = "" }) {
+export function classifyToken({ name = "", symbol = "", address = "" }) {
   const reasons = [];
 
   if (URL_PATTERN.test(name) || URL_PATTERN.test(symbol)) {
@@ -25,8 +36,9 @@ export function classifyToken({ name = "", symbol = "" }) {
   }
 
   const upperSymbol = symbol.toUpperCase().trim();
-  for (const ticker of KNOWN_TICKERS) {
-    if (upperSymbol !== ticker && upperSymbol.replace(/[^A-Z]/g, "") === ticker && upperSymbol !== ticker) {
+  const lowerAddress = address.toLowerCase();
+  for (const [ticker, canonicalAddress] of Object.entries(KNOWN_TICKER_ADDRESSES)) {
+    if (upperSymbol.replace(/[^A-Z]/g, "") === ticker && lowerAddress !== canonicalAddress) {
       reasons.push(`impersonates_${ticker}`);
     }
   }

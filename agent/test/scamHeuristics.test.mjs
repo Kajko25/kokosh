@@ -25,3 +25,17 @@ test("flags non-latin homoglyphs", () => {
   assert.equal(result.suspicious, true);
   assert.ok(result.reasons.includes("non_latin_homoglyph"));
 });
+
+test("flags an exact-symbol impersonation from an unlisted contract address", () => {
+  // Real miss this heuristic used to have: a scam token with symbol/name exactly "AAVE"
+  // (2.1B total supply vs. the real ~16M) at an address that isn't Aave's own token.
+  const result = classifyToken({ name: "AAVE", symbol: "AAVE", address: "0x9053A44fABa4D7a5D71dcd64cf4dE73554888eD3" });
+  assert.equal(result.suspicious, true);
+  assert.ok(result.reasons.includes("impersonates_AAVE"));
+});
+
+test("does not flag the real token at its canonical address", () => {
+  const result = classifyToken({ name: "Aave Token", symbol: "AAVE", address: "0x63706e401c06ac8513145b7687A14804d17f814b" });
+  assert.equal(result.suspicious, false);
+  assert.deepEqual(result.reasons, []);
+});
