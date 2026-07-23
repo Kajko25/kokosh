@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kokosh — Sub Account</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 4rem auto; padding: 0 1rem; background: #0b0b12; color: #eee; }
+    h1 { font-size: 1.3rem; }
+    #status { margin-top: 1.5rem; padding: 1rem; border-radius: 8px; background: #1a1a2e; white-space: pre-wrap; word-break: break-all; font-size: 0.85rem; }
+    button { background: #0000FF; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>Kokosh — Sub Account</h1>
+  <p>Creates an app-scoped sub account under your Base Account passkey wallet, then signs a
+  message from the sub account to prove it needs no extra approval popup after connect.</p>
+  <button id="create">Create sub account + sign</button>
+  <div id="status"></div>
+
+  <script type="module">
+    import { createBaseAccountSDK, getCryptoKeyAccount } from "https://esm.sh/@base-org/account@2.5.7";
+
+    const statusEl = document.getElementById("status");
+    const btn = document.getElementById("create");
+
+    const sdk = createBaseAccountSDK({
+      appName: "Kokosh",
+      appLogoUrl: "https://kokosh-agent.vercel.app/favicon.ico",
+      appChainIds: [8453],
+      subAccounts: {
+        creation: "on-connect",
+        defaultAccount: "sub",
+        funding: "manual",
+        toOwnerAccount: async () => {
+          const { account } = await getCryptoKeyAccount();
+          return { account };
+        },
+      },
+    });
+    const provider = sdk.getProvider();
+
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      statusEl.textContent = "Connecting (popup expected: parent Base Account + sub account grant)...";
+      try {
+        const { accounts } = await provider.request({ method: "wallet_connect", params: [{ version: "1" }] });
+        const parent = accounts[0].address;
+
+        // Real SDK gap: wallet_getSubAccounts returns { subAccounts: [...] }, not a bare
+        // array, despite the docs example showing "subAccounts = await provider.request(...)"
+        // and indexing it directly.
+        const { subAccounts } = await provider.request({ method: "wallet_getSubAccounts" });
+        const sub = subAccounts?.[0];
+        if (!sub) throw new Error("no sub account returned by wallet_getSubAccounts");
+
+        statusEl.textContent =
+          `Connected.\nparent: ${parent}\nsub account: ${sub.address}\n\nSigning a message from the sub account (expect NO extra popup)...`;
+
+        const message = `Kokosh sub-account test — ${new Date().toISOString()}`;
+        // Real SDK gap: the sub-account signer's personal_sign requires params[0] to
+        // already be hex-encoded bytes, unlike the usual EIP-1193 convention where a raw
+        // UTF-8 string is also accepted.
+        const messageHex =
+          "0x" + Array.from(new TextEncoder().encode(message)).map((b) => b.toString(16).padStart(2, "0")).join("");
+        const signature = await provider.request({
+          method: "personal_sign",
+          params: [messageHex, sub.address],
+        });
+
+        statusEl.textContent =
+          `Done.\nparent: ${parent}\nsub account: ${sub.address}\n\nmessage: ${message}\nsignature: ${signature}`;
+      } catch (err) {
+        statusEl.textContent = "Error: " + (err?.message ?? String(err));
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

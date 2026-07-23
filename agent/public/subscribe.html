@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kokosh — Spend Permission</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 4rem auto; padding: 0 1rem; background: #0b0b12; color: #eee; }
+    h1 { font-size: 1.3rem; }
+    #status { margin-top: 1.5rem; padding: 1rem; border-radius: 8px; background: #1a1a2e; white-space: pre-wrap; word-break: break-all; font-size: 0.85rem; }
+    button { background: #0000FF; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>Kokosh — Spend Permission</h1>
+  <p>Grants the courier relay wallet a revocable permission to pull up to $0.05 USDC per day
+  from your Base Account, without a popup on every charge. Courier charges/revokes it from
+  the backend using the id shown below.</p>
+  <button id="sub">Grant $0.05/day spend permission</button>
+  <div id="status"></div>
+
+  <script type="module">
+    import { base } from "https://esm.sh/@base-org/account@2.5.7";
+
+    const statusEl = document.getElementById("status");
+    const btn = document.getElementById("sub");
+    const COURIER = "0xf2035170A3B5106DBD4c98853D3C9E52c77eA4E6";
+
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      statusEl.textContent = "Opening Base Account popup...";
+      try {
+        const subscription = await base.subscription.subscribe({
+          recurringCharge: "0.05",
+          subscriptionOwner: COURIER,
+          periodInDays: 1,
+          testnet: false,
+        });
+        statusEl.textContent =
+          "Granted.\n" + JSON.stringify(subscription, null, 2) +
+          "\n\nCopy the id above — it's needed to charge or revoke from the backend.";
+      } catch (err) {
+        statusEl.textContent = "Error: " + (err?.message ?? String(err));
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
