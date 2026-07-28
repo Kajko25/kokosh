@@ -11,6 +11,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { planWindows, withRateLimitRetry, DEFAULT_MAX_LOG_RANGE } from "../lib/rangeScan.mjs";
+import { parseSentinelState } from "../lib/sentinelState.mjs";
 import { promisify } from "node:util";
 import { createPublicClient, http, parseAbiItem, getAddress, encodeAbiParameters } from "viem";
 import { base } from "viem/chains";
@@ -33,11 +34,11 @@ const PERMIT2_APPROVAL = parseAbiItem(
   "event Approval(address indexed owner, address indexed token, address indexed spender, uint160 amount, uint48 expiration)"
 );
 
-function loadState() {
+function loadState(latestBlock) {
   if (!existsSync(STATE_PATH)) {
     throw new Error("no docs/sentinel-state.json — seed one with a baseline lastScannedBlock/knownFlaggedTokens first");
   }
-  return JSON.parse(readFileSync(STATE_PATH, "utf8"));
+  return parseSentinelState(readFileSync(STATE_PATH, "utf8"), { latestBlock });
 }
 
 // See lib/rangeScan.mjs for why the range is walked in windows and why rate-limit errors
@@ -152,8 +153,8 @@ async function attestFinding(newFindings, summary) {
 }
 
 async function main() {
-  const state = loadState();
   const latest = await client.getBlockNumber();
+  const state = loadState(latest);
   const fromBlock = BigInt(state.lastScannedBlock) + 1n;
 
   console.log(`sentinel run @ ${new Date().toISOString()} — scanning blocks ${fromBlock}-${latest}`);

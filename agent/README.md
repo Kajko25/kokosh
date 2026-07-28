@@ -32,6 +32,7 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `lib/signInRequest.mjs` | request-shape validation for `/auth/verify` |
 | `lib/rateLimit.mjs` | fixed-window rate limiting for the sign-in endpoints |
 | `lib/cache.mjs` | single-flight TTL cache for upstream holdings reads |
+| `lib/sentinelState.mjs` | validation for the sentinel's state file |
 | `scripts/sentinel-run.mjs` | the autonomous check (see [Sentinel](#sentinel)) |
 | `scripts/sentinel-cron.sh` | jitter / stand-down / daily-cap wrapper around it |
 | `scripts/pay-audit.mjs` | x402 *buyer* — pays another service, proving the other side of the flow |
