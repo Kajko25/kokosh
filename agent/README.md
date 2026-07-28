@@ -114,7 +114,16 @@ revenue path. Local development that genuinely wants the free report opts in exp
 
 ### `GET /.well-known/agent-card.json`
 
-Static agent card — name, description, wallet, endpoint map. Cached 5 minutes.
+Agent card — name, description, wallet, endpoint map, plus:
+
+- `registrations`: the ERC-8004 identity (`agentId` 59633 on chain 8453), so a consumer can
+  verify the agent on-chain instead of trusting this file
+- `payment`: the exact x402 terms for `/audit` (scheme, price, network, payee), taken from the
+  same constants the middleware charges with so the two cannot drift apart. It is `null`
+  whenever the endpoint is not actually paid — advertising a price for a free or disabled
+  endpoint would send a paying agent to construct a payment nothing will accept
+
+Cached 5 minutes.
 
 ### `GET /auth/nonce` and `POST /auth/verify`
 

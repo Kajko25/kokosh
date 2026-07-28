@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { classifyToken } from "./lib/scamHeuristics.mjs";
 import { fetchTokenHoldings } from "./lib/blockscout.mjs";
 import { readExposureReport } from "./lib/exposure.mjs";
-import { buildAuditPaymentMiddleware } from "./lib/x402Seller.mjs";
+import { buildAuditPaymentMiddleware, AGENT_WALLET, AUDIT_PRICE, AUDIT_NETWORK } from "./lib/x402Seller.mjs";
 import { issueNonce, verifySignIn, nonceStoreKind } from "./lib/siwb.mjs";
 import { validatePayerInfo } from "./lib/payValidate.mjs";
 import { validateSignInRequest } from "./lib/signInRequest.mjs";
@@ -204,11 +204,19 @@ export function agentCard({ auditMode = "paid" } = {}) {
     description:
       "Wallet-hygiene sentinel for kajko24.base.eth: tracks token/Permit2 allowance exposure, and flags scam-airdrop tokens by name/URL/homoglyph heuristics.",
     wallet: WALLET,
+    // On-chain identity, so a consumer can look the agent up rather than trusting this file.
+    registrations: [{ standard: "ERC-8004", registry: "identity", chainId: 8453, agentId: 59633 }],
     endpoints: {
       healthz: "/healthz",
       exposure: "/exposure",
       drops: "/drops",
       audit: AUDIT_DESCRIPTIONS[auditMode] ?? AUDIT_DESCRIPTIONS.paid,
     },
+    // Everything a paying agent needs to construct the payment without a preflight request,
+    // taken from the same constants the middleware charges with so the two cannot drift.
+    payment:
+      auditMode === "paid"
+        ? { "/audit": { scheme: "x402", protocol: "exact", price: AUDIT_PRICE, network: AUDIT_NETWORK, payTo: AGENT_WALLET } }
+        : null,
   };
 }

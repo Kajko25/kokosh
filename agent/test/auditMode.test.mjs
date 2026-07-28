@@ -128,3 +128,31 @@ test("healthz reports the modes actually in force", async () => {
 // The "paid" path is intentionally not exercised through makeApp: mounting the real x402
 // middleware makes it initialise against the CDP facilitator, which rejects placeholder
 // credentials. resolveAuditMode covers that branch directly instead.
+
+test("the card carries the ERC-8004 identity so a consumer can verify it on-chain", () => {
+  const [registration] = agentCard().registrations;
+  assert.equal(registration.standard, "ERC-8004");
+  assert.equal(registration.agentId, 59633);
+  assert.equal(registration.chainId, 8453);
+});
+
+test("payment terms are advertised only when the endpoint is actually paid", () => {
+  const paid = agentCard({ auditMode: "paid" }).payment["/audit"];
+  assert.equal(paid.price, "$0.01");
+  assert.equal(paid.network, "eip155:8453");
+  assert.equal(paid.payTo, "0xf2035170A3B5106DBD4c98853D3C9E52c77eA4E6");
+
+  // Advertising a price for an endpoint that is free or switched off would send a paying
+  // agent to construct a payment nothing will accept.
+  assert.equal(agentCard({ auditMode: "unpaid" }).payment, null);
+  assert.equal(agentCard({ auditMode: "unavailable" }).payment, null);
+});
+
+test("the advertised payee matches what the middleware would charge", async () => {
+  // Guards drift between the card and the seller config — the failure mode would be silent.
+  const { AGENT_WALLET, AUDIT_PRICE, AUDIT_NETWORK } = await import("../lib/x402Seller.mjs");
+  const advertised = agentCard({ auditMode: "paid" }).payment["/audit"];
+  assert.equal(advertised.payTo, AGENT_WALLET);
+  assert.equal(advertised.price, AUDIT_PRICE);
+  assert.equal(advertised.network, AUDIT_NETWORK);
+});
