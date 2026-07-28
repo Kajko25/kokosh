@@ -10,6 +10,7 @@ import { validatePayerInfo } from "./lib/payValidate.mjs";
 import { validateSignInRequest } from "./lib/signInRequest.mjs";
 import { describeFreshness } from "./lib/freshness.mjs";
 import { failure } from "./lib/httpError.mjs";
+import { createRateLimiter, rateLimitMiddleware } from "./lib/rateLimit.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -55,7 +56,7 @@ export function resolveAuditMode({ cdp, allowUnpaidAudit = false } = {}) {
   return allowUnpaidAudit ? "unpaid" : "unavailable";
 }
 
-export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit = false } = {}) {
+export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit = false, authRateLimit } = {}) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json());
@@ -83,6 +84,11 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
       });
     });
   }
+
+  // Both sign-in endpoints share one budget: they are two halves of a single flow, so
+  // limiting them separately would just double what a caller can extract.
+  const authLimiter = createRateLimiter({ now, ...authRateLimit });
+  app.use(["/auth/nonce", "/auth/verify"], rateLimitMiddleware(authLimiter));
 
   app.get("/auth/nonce", (req, res) => {
     res.set("Cache-Control", "no-store");

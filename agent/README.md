@@ -30,6 +30,7 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `lib/httpError.mjs` | error envelope: stable code to the client, detail to the log |
 | `lib/nonceStore.mjs` | single-use nonce claims (Vercel KV or memory) |
 | `lib/signInRequest.mjs` | request-shape validation for `/auth/verify` |
+| `lib/rateLimit.mjs` | fixed-window rate limiting for the sign-in endpoints |
 | `scripts/sentinel-run.mjs` | the autonomous check (see [Sentinel](#sentinel)) |
 | `scripts/sentinel-cron.sh` | jitter / stand-down / daily-cap wrapper around it |
 | `scripts/pay-audit.mjs` | x402 *buyer* — pays another service, proving the other side of the flow |
@@ -130,6 +131,13 @@ that are not yet deployed).
   `nonce_already_used`, or `invalid_signature`
 - `503 {"error":"nonce_store_unavailable"}` — a store outage is a server failure, not a
   rejected credential, so it must not be reported to an honest client as a bad signature
+
+Both sign-in endpoints share one rate-limit budget (default 30 requests/minute per client),
+returning `429 {"error":"rate_limited"}` with a `Retry-After` header. `/auth/verify` costs an
+RPC call and a KV write per request with no credential required, so it should not be freely
+amplifiable. The limiter is per-instance and in-memory: on serverless the effective ceiling is
+limit x instances, which bounds obvious abuse without adding a shared-counter round trip to
+every request — the very cost being defended against. It gates cost, never authorisation.
 
 **Nonces are stateless.** Each one is `<16 hex random><8 hex expiry><32 hex HMAC>` — 56
 alphanumeric characters, as SIWE requires — signed with `SIWB_NONCE_SECRET`. Any instance
