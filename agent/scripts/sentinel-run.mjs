@@ -10,6 +10,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execFile } from "node:child_process";
+import { planWindows, withRateLimitRetry, DEFAULT_MAX_LOG_RANGE } from "../lib/rangeScan.mjs";
 import { promisify } from "node:util";
 import { createPublicClient, http, parseAbiItem, getAddress, encodeAbiParameters } from "viem";
 import { base } from "viem/chains";
@@ -39,48 +40,30 @@ function loadState() {
   return JSON.parse(readFileSync(STATE_PATH, "utf8"));
 }
 
-// Base's public RPC rejects any eth_getLogs spanning more than 10,000 blocks
-// (error -32614, "eth_getLogs is limited to a 10,000 range"). A daily cron already
-// covers ~43,000 blocks, so an unchunked scan fails on every run that isn't nearly
-// back-to-back with the previous one — walk the range in windows instead.
-const MAX_LOG_RANGE = BigInt(process.env.MAX_LOG_RANGE ?? 9500);
+// See lib/rangeScan.mjs for why the range is walked in windows and why rate-limit errors
+// are retried — both encode real production failures. The logic lives there so it can be
+// unit-tested without a live RPC client; this file only wires it to the actual scan.
+const MAX_LOG_RANGE = BigInt(process.env.MAX_LOG_RANGE ?? DEFAULT_MAX_LOG_RANGE);
 
 // DRY_RUN exercises the whole scan — including the chunked range walk, which is the part
 // that actually broke — without submitting an attestation or advancing the state file,
 // so a fix can be verified against real mainnet data without on-chain side effects.
 const DRY_RUN = process.env.DRY_RUN === "1";
 
-// Walking a long range means dozens of sequential calls, and Base's public RPC starts
-// answering -32016 "over rate limit" well before that finishes. Pace the windows and back
-// off on rate-limit errors rather than letting one throttled window kill the whole run.
 const WINDOW_DELAY_MS = Number(process.env.WINDOW_DELAY_MS ?? 250);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function withRateLimitRetry(fn, label) {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      const rateLimited = err?.cause?.code === -32016 || /over rate limit/i.test(err?.details ?? "");
-      if (!rateLimited || attempt >= 4) throw err;
-      const wait = 2000 * 2 ** attempt;
-      console.log(`rate limited on ${label}, retrying in ${wait}ms (attempt ${attempt + 1}/5)`);
-      await sleep(wait);
-    }
-  }
-}
-
 async function getLogsChunked(event, fromBlock, toBlock) {
+  const windows = planWindows(fromBlock, toBlock, MAX_LOG_RANGE);
   const logs = [];
-  for (let start = fromBlock; start <= toBlock; start += MAX_LOG_RANGE) {
-    const last = start + MAX_LOG_RANGE - 1n;
-    const end = last > toBlock ? toBlock : last;
-    const window = await withRateLimitRetry(
-      () => client.getLogs({ event, args: { owner: OWNER }, fromBlock: start, toBlock: end }),
-      `blocks ${start}-${end}`
+
+  for (const [i, w] of windows.entries()) {
+    const found = await withRateLimitRetry(
+      () => client.getLogs({ event, args: { owner: OWNER }, fromBlock: w.fromBlock, toBlock: w.toBlock }),
+      `blocks ${w.fromBlock}-${w.toBlock}`
     );
-    logs.push(...window);
-    if (end < toBlock) await sleep(WINDOW_DELAY_MS);
+    logs.push(...found);
+    if (i < windows.length - 1) await sleep(WINDOW_DELAY_MS);
   }
   return logs;
 }
