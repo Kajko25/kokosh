@@ -1,6 +1,6 @@
 import { createPublicClient, http } from "viem";
 import { base } from "viem/chains";
-import { makeApp, resolveAuditMode } from "./app.mjs";
+import { makeApp, resolveAuditMode } from "./lib/app.mjs";
 import { warnOnAuditMode } from "./lib/auditMode.mjs";
 
 const client = createPublicClient({ chain: base, transport: http("https://mainnet.base.org") });

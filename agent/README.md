@@ -16,7 +16,7 @@ schedule and attests on-chain when — and only when — something genuinely cha
 
 | Path | Role |
 | --- | --- |
-| `app.mjs` | `makeApp({ client, now, cdp })` factory — all routes, no I/O bindings of its own |
+| `lib/app.mjs` | `makeApp({ client, now, cdp })` factory — all routes, no I/O bindings of its own |
 | `server.mjs` | local entry point (`npm start`, port 3000) |
 | `api/index.js` | Vercel entry point; `vercel.json` rewrites every path to it |
 | `lib/scamHeuristics.mjs` | `classifyToken()` — the airdrop-scam rules |
@@ -47,6 +47,12 @@ Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY
 `Cross-Origin-Opener-Policy: same-origin-allow-popups` the Base Account popup flows need.
 These matter here because `public/` serves real wallet sign-in and payment pages, not just
 JSON.
+
+They are set **twice, on purpose**: in the Express middleware for function responses, and in
+`vercel.json` for everything Vercel's CDN serves directly. The static pages never reach
+Express in production — verified by their `x-vercel-cache: HIT` and the absence of the
+Express-set headers — so middleware alone protected exactly the responses that needed it
+least.
 
 **No Content-Security-Policy, deliberately.** Those pages import the Base Account SDK and viem
 from esm.sh and hand off to Coinbase-hosted signing, so a correct policy has to be verified in

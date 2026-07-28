@@ -1,17 +1,17 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { classifyToken } from "./lib/scamHeuristics.mjs";
-import { fetchTokenHoldings } from "./lib/blockscout.mjs";
-import { readExposureReport } from "./lib/exposure.mjs";
-import { buildAuditPaymentMiddleware, AGENT_WALLET, AUDIT_PRICE, AUDIT_NETWORK } from "./lib/x402Seller.mjs";
-import { issueNonce, verifySignIn, nonceStoreKind } from "./lib/siwb.mjs";
-import { validatePayerInfo } from "./lib/payValidate.mjs";
-import { validateSignInRequest } from "./lib/signInRequest.mjs";
-import { describeFreshness } from "./lib/freshness.mjs";
-import { failure } from "./lib/httpError.mjs";
-import { createRateLimiter, rateLimitMiddleware } from "./lib/rateLimit.mjs";
-import { createTtlCache } from "./lib/cache.mjs";
+import { classifyToken } from "./scamHeuristics.mjs";
+import { fetchTokenHoldings } from "./blockscout.mjs";
+import { readExposureReport } from "./exposure.mjs";
+import { buildAuditPaymentMiddleware, AGENT_WALLET, AUDIT_PRICE, AUDIT_NETWORK } from "./x402Seller.mjs";
+import { issueNonce, verifySignIn, nonceStoreKind } from "./siwb.mjs";
+import { validatePayerInfo } from "./payValidate.mjs";
+import { validateSignInRequest } from "./signInRequest.mjs";
+import { describeFreshness } from "./freshness.mjs";
+import { failure } from "./httpError.mjs";
+import { createRateLimiter, rateLimitMiddleware } from "./rateLimit.mjs";
+import { createTtlCache } from "./cache.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -84,7 +84,7 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
     // sign-in flows that are known to work. Left as a documented gap rather than a guess.
     next();
   });
-  app.use(express.static(join(__dirname, "public")));
+  app.use(express.static(join(__dirname, "..", "public")));
 
   const auditMode = resolveAuditMode({ cdp, allowUnpaidAudit });
 
