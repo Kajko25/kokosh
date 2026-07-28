@@ -44,10 +44,14 @@ what lets `test/app.test.mjs` drive every route against a stub with no network.
 Liveness plus a freshness check on the RPC connection. Reads the latest block and compares its
 timestamp to now.
 
-- `200 {"status":"ok","lagSeconds":N,"blockNumber":"..."}`
+- `200 {"status":"ok","lagSeconds":N,"blockNumber":"...","config":{...}}`
 - `503 {"status":"degraded",...}` when `lagSeconds > 60` — a reachable but stale node is a real
   failure mode for a monitor, so it is not reported as healthy
 - `503 {"status":"unreachable","error":"rpc_unreachable"}` when the call throws
+
+`config` reports the modes actually in force — `audit` (`paid` / `unpaid` / `unavailable`) and
+`nonceStore` (`kv` / `memory`). Both are things that previously degraded silently when an env
+var was missing, so they are observable from outside rather than only in a startup log.
 
 ### `GET /exposure`
 

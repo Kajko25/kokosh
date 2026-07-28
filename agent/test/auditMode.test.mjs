@@ -105,3 +105,26 @@ test("startup warns on unavailable and free modes, and only logs on paid", () =>
   assert.deepEqual(calls.map(([level]) => level), ["log", "warn", "warn"]);
   assert.match(calls[2][1], /CDP_API_KEY_ID/);
 });
+
+test("healthz reports the modes actually in force", async () => {
+  const nowMs = 1_800_000_000_000;
+  const fakeClient = {
+    getBlock: async () => ({ timestamp: BigInt(Math.floor(nowMs / 1000) - 1), number: 1n }),
+  };
+  const app = makeApp({ client: fakeClient, now: () => nowMs });
+  const server = await listen(app);
+  const { port } = server.address();
+
+  const res = await fetch(`http://localhost:${port}/healthz`);
+  const body = await res.json();
+  server.close();
+
+  // No CDP keys and no KV in the test environment, so both degraded modes should be visible
+  // rather than only mentioned in a startup log.
+  assert.equal(body.config.audit, "unavailable");
+  assert.equal(body.config.nonceStore, "memory");
+});
+
+// The "paid" path is intentionally not exercised through makeApp: mounting the real x402
+// middleware makes it initialise against the CDP facilitator, which rejects placeholder
+// credentials. resolveAuditMode covers that branch directly instead.

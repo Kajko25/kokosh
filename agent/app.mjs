@@ -5,7 +5,7 @@ import { classifyToken } from "./lib/scamHeuristics.mjs";
 import { fetchTokenHoldings } from "./lib/blockscout.mjs";
 import { readExposureReport } from "./lib/exposure.mjs";
 import { buildAuditPaymentMiddleware } from "./lib/x402Seller.mjs";
-import { issueNonce, verifySignIn } from "./lib/siwb.mjs";
+import { issueNonce, verifySignIn, nonceStoreKind } from "./lib/siwb.mjs";
 import { validatePayerInfo } from "./lib/payValidate.mjs";
 import { validateSignInRequest } from "./lib/signInRequest.mjs";
 import { describeFreshness } from "./lib/freshness.mjs";
@@ -120,6 +120,10 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
         status: degraded ? "degraded" : "ok",
         lagSeconds,
         blockNumber: block.number.toString(),
+        // Configuration that silently degrades is the failure mode this agent has hit twice
+        // (payments, then nonces), so the modes actually in force are observable from
+        // outside rather than only in a startup log nobody reads.
+        config: { audit: auditMode, nonceStore: nonceStoreKind() },
       });
     } catch (err) {
       // Keeps the documented {status} shape for this endpoint while still not echoing the
