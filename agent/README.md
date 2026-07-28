@@ -252,6 +252,13 @@ over current holdings, and diffs both against what it already knew.
   `SentinelCheck(address wallet, uint64 checkedAt, uint16 newFindings, string summary)`
   (`0x37419361…97e93032`).
 
+**What it structurally cannot see:** approvals granted before its baseline. The sentinel scans
+*forward* from `lastScannedBlock`, which makes each cycle cheap but means anything already live
+when the baseline was seeded is invisible to it forever. `scripts/scan-approvals.mjs` scans from
+block 0 and is what catches those — run it periodically, not just once. A live WETH allowance to
+the Aave v3 Pool, left over from a July 23 borrow/repay cycle, sat unnoticed for exactly this
+reason until a full scan found it.
+
 **What it structurally cannot do:** revoke. Only `0x2984` can call `approve()` on its own
 allowances, and that wallet signs exclusively via Ledger — so an unattended cron can report a
 newly-discovered live approval but never fix it. The script says so explicitly in its output
