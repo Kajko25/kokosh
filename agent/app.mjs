@@ -35,7 +35,23 @@ async function computeAudit() {
   };
 }
 
-export function makeApp({ client, now = () => Date.now(), cdp } = {}) {
+/**
+ * Decide how /audit behaves given the credentials actually present.
+ *
+ * `paid`        — CDP keys configured, x402 middleware charges for the report.
+ * `unpaid`      — no keys, but serving it free was an explicit, deliberate choice.
+ * `unavailable` — no keys and no opt-in: refuse rather than give the paid report away.
+ *
+ * The default is `unavailable` on purpose. Previously a missing key silently downgraded a
+ * paid endpoint to a free one with no error anywhere, which is the worst of the three: it
+ * looks like a working deployment while the agent's only revenue path is quietly wide open.
+ */
+export function resolveAuditMode({ cdp, allowUnpaidAudit = false } = {}) {
+  if (cdp?.apiKeyId && cdp?.apiKeySecret) return "paid";
+  return allowUnpaidAudit ? "unpaid" : "unavailable";
+}
+
+export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit = false } = {}) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json());
@@ -45,8 +61,23 @@ export function makeApp({ client, now = () => Date.now(), cdp } = {}) {
   });
   app.use(express.static(join(__dirname, "public")));
 
-  if (cdp?.apiKeyId && cdp?.apiKeySecret) {
+  const auditMode = resolveAuditMode({ cdp, allowUnpaidAudit });
+
+  if (auditMode === "paid") {
     app.use(buildAuditPaymentMiddleware({ cdpApiKeyId: cdp.apiKeyId, cdpApiKeySecret: cdp.apiKeySecret }));
+  } else if (auditMode === "unavailable") {
+    // Registered here, ahead of the GET /audit handler below, so it intercepts rather than
+    // falling through to the free report.
+    app.use("/audit", (req, res) => {
+      res.set("Cache-Control", "no-store");
+      res.status(503).json({
+        error: "payment_not_configured",
+        detail:
+          "/audit is a paid endpoint but CDP_API_KEY_ID / CDP_API_KEY_SECRET are not set, " +
+          "so payment cannot be collected. Set both to enable charging, or set " +
+          "ALLOW_UNPAID_AUDIT=1 to serve the report free on purpose.",
+      });
+    });
   }
 
   app.get("/auth/nonce", (req, res) => {
@@ -134,13 +165,21 @@ export function makeApp({ client, now = () => Date.now(), cdp } = {}) {
 
   app.get("/.well-known/agent-card.json", (req, res) => {
     res.set("Cache-Control", "public, max-age=300");
-    res.json(agentCard());
+    res.json(agentCard({ auditMode }));
   });
 
   return app;
 }
 
-export function agentCard() {
+// The card is the machine-readable advertisement other agents act on, so it states the
+// audit endpoint's *actual* mode rather than always claiming it is paid and available.
+const AUDIT_DESCRIPTIONS = {
+  paid: "/audit (paid via x402, $0.01 USDC on Base)",
+  unpaid: "/audit (served free — payments deliberately disabled)",
+  unavailable: "/audit (unavailable — payments not configured)",
+};
+
+export function agentCard({ auditMode = "paid" } = {}) {
   return {
     name: "Kokosh",
     description:
@@ -150,7 +189,7 @@ export function agentCard() {
       healthz: "/healthz",
       exposure: "/exposure",
       drops: "/drops",
-      audit: "/audit (paid via x402, $0.01 USDC on Base)",
+      audit: AUDIT_DESCRIPTIONS[auditMode] ?? AUDIT_DESCRIPTIONS.paid,
     },
   };
 }

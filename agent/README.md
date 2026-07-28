@@ -79,10 +79,23 @@ Priced at **$0.01 USDC on Base** (`eip155:8453`, x402 `exact` scheme), paid to t
 agent wallet `0xf2035170A3B5106DBD4c98853D3C9E52c77eA4E6` — deliberately not the Ledger-held
 main wallet, so receiving payments never needs hardware present.
 
-**Deployment caveat:** the payment middleware is only mounted when *both* `CDP_API_KEY_ID` and
-`CDP_API_KEY_SECRET` are set. Without them the app still starts and `/audit` is served **free**.
-That keeps local development and tests running without CDP credentials, but it means a
-production deploy missing those env vars silently gives the report away.
+**Payment configuration is fail-closed.** `/audit` has three modes, resolved at startup by
+`resolveAuditMode()`:
+
+| Mode | When | Behaviour |
+| --- | --- | --- |
+| `paid` | both `CDP_API_KEY_ID` and `CDP_API_KEY_SECRET` set | x402 middleware charges $0.01 |
+| `unpaid` | no keys **and** `ALLOW_UNPAID_AUDIT=1` | served free, deliberately |
+| `unavailable` | no keys, no opt-in (**default**) | `503 {"error":"payment_not_configured"}` |
+
+A half-configured credential (only one of the two keys) counts as *not* configured. The mode is
+logged at startup — a warning for the two non-paying modes — and the agent card advertises the
+real mode rather than always claiming the endpoint is paid.
+
+The default matters: an earlier version simply skipped the payment middleware when keys were
+missing, so a production deploy with a typo'd env var served the paid report free with no error
+anywhere. Serving nothing is a louder, safer failure than silently giving away the agent's only
+revenue path. Local development that genuinely wants the free report opts in explicitly.
 
 ### `GET /.well-known/agent-card.json`
 
@@ -166,6 +179,9 @@ node scripts/sentinel-run.mjs             # real run
 | `DRY_RUN` | unset | `1` = scan only; skip the attestation and leave the state file untouched |
 | `MAX_LOG_RANGE` | `9500` | blocks per `eth_getLogs` window |
 | `WINDOW_DELAY_MS` | `250` | pause between windows |
+
+The app itself reads `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET` and `ALLOW_UNPAID_AUDIT` — see
+[`GET /audit`](#get-audit--paid).
 
 `MAX_LOG_RANGE` must stay under **10,000** — Base's RPC rejects wider ranges with `-32614`.
 Since Base produces roughly 43,000 blocks a day, the range walk is not an optimisation: an

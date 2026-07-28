@@ -85,5 +85,7 @@ test("agent-card.json includes the wallet and endpoints", async () => {
 
   assert.equal(res.status, 200);
   assert.equal(body.wallet, "0x2984Bb4953cfCE2cEc957388BE686D6c38779234");
-  assert.deepEqual(body, agentCard());
+  // No CDP keys are passed here, so the card reports the audit as unavailable rather than
+  // the default "paid" — see test/auditMode.test.mjs.
+  assert.deepEqual(body, agentCard({ auditMode: "unavailable" }));
 });
