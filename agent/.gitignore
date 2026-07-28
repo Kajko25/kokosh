@@ -1,2 +1,5 @@
 .vercel
 .env*
+
+# The example carries no secrets and must be committed.
+!.env.example

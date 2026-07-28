@@ -245,8 +245,13 @@ never started.
 
 ## Development
 
+All environment variables are documented in [`.env.example`](.env.example) — copy it to
+`.env.local` to get started. Every one is optional; what changes is which degraded mode you
+land in, and each is reported at startup and on `/healthz`.
+
 ```bash
 cd agent
+cp .env.example .env.local
 npm install
 npm start                 # http://localhost:3000
 npm test                  # node --test, no network required
