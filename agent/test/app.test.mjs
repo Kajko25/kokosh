@@ -130,3 +130,24 @@ test("unmatched routes answer JSON, not an HTML error page", async () => {
   // The default page echoes the requested path back; this one does not.
   assert.equal(JSON.stringify(body).includes("definitely-not-a-route"), false);
 });
+
+test("security headers are set on every response", async () => {
+  const app = makeApp({ client: {} });
+  const server = await listen(app);
+  const { port } = server.address();
+
+  let res;
+  try {
+    res = await fetch(`http://localhost:${port}/.well-known/agent-card.json`);
+    await res.arrayBuffer();
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+  }
+
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(res.headers.get("x-frame-options"), "DENY");
+  assert.equal(res.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
+  // Still required by the Base Account popup flows the public/ pages use.
+  assert.equal(res.headers.get("cross-origin-opener-policy"), "same-origin-allow-popups");
+});

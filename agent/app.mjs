@@ -61,7 +61,21 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
   app.disable("x-powered-by");
   app.use(express.json());
   app.use((req, res, next) => {
+    // Needed for the Base Account popup flows the pages under public/ rely on.
     res.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+
+    // public/ serves real wallet sign-in and payment pages, so these are not box-ticking:
+    // nosniff stops a JSON response being reinterpreted as script, DENY keeps the signing
+    // pages out of a frame, and the referrer policy keeps paths off third-party sites.
+    res.set("X-Content-Type-Options", "nosniff");
+    res.set("X-Frame-Options", "DENY");
+    res.set("Referrer-Policy", "strict-origin-when-cross-origin");
+
+    // Deliberately no Content-Security-Policy. The pages import the Base Account SDK and viem
+    // from esm.sh and hand off to Coinbase-hosted signing, so a correct policy needs
+    // verification in a real browser against a real wallet flow. This environment has no
+    // headless browser (missing libnspr4), and shipping an unverified CSP would risk breaking
+    // sign-in flows that are known to work. Left as a documented gap rather than a guess.
     next();
   });
   app.use(express.static(join(__dirname, "public")));

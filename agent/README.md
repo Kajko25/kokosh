@@ -38,6 +38,20 @@ schedule and attests on-chain when — and only when — something genuinely cha
 The app factory takes its viem client as an argument rather than constructing one, which is
 what lets `test/app.test.mjs` drive every route against a stub with no network.
 
+## Security headers
+
+Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
+`Referrer-Policy: strict-origin-when-cross-origin`, plus the
+`Cross-Origin-Opener-Policy: same-origin-allow-popups` the Base Account popup flows need.
+These matter here because `public/` serves real wallet sign-in and payment pages, not just
+JSON.
+
+**No Content-Security-Policy, deliberately.** Those pages import the Base Account SDK and viem
+from esm.sh and hand off to Coinbase-hosted signing, so a correct policy has to be verified in
+a real browser against a real wallet flow. This environment has no headless browser, and an
+unverified CSP would risk breaking sign-in flows that are known to work. Recorded as a known
+gap rather than guessed at.
+
 ## HTTP API
 
 ### `GET /`
