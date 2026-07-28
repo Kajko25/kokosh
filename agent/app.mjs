@@ -8,6 +8,7 @@ import { buildAuditPaymentMiddleware } from "./lib/x402Seller.mjs";
 import { issueNonce, verifySignIn } from "./lib/siwb.mjs";
 import { validatePayerInfo } from "./lib/payValidate.mjs";
 import { validateSignInRequest } from "./lib/signInRequest.mjs";
+import { describeFreshness } from "./lib/freshness.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +23,7 @@ async function computeAudit() {
     wallet: WALLET,
     auditedAt: new Date().toISOString(),
     exposure: {
+      ...describeFreshness(report?.scannedAt),
       liveErc20Approvals: report?.erc20Live.length ?? null,
       livePermit2Grants: report?.permit2Live.length ?? null,
       approvals: report?.erc20Live ?? [],
@@ -132,7 +134,7 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
     }
     res.json({
       wallet: WALLET,
-      scannedAt: report.scannedAt,
+      ...describeFreshness(report.scannedAt, { now }),
       liveErc20Approvals: report.erc20Live.length,
       livePermit2Grants: report.permit2Live.length,
       approvals: report.erc20Live,

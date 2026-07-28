@@ -49,12 +49,16 @@ timestamp to now.
 
 Live approval exposure for the wallet.
 
-- `200` with `liveErc20Approvals`, `livePermit2Grants`, and the full `approvals` / `permit2Grants` arrays
+- `200` with `liveErc20Approvals`, `livePermit2Grants`, the full `approvals` /
+  `permit2Grants` arrays, and freshness fields `scannedAt`, `ageSeconds`, `stale`
 - `202 {"status":"not_scanned_yet"}` when no snapshot exists
 
 **Caveat, by design:** this serves `docs/approvals-report.json`, a snapshot committed to the
-repo by `scripts/scan-approvals.mjs` — it is not scanned per request. `scannedAt` in the
-response is the honest timestamp. For a fresh answer, re-run the scanner. Cached 5 minutes.
+repo by `scripts/scan-approvals.mjs` — it is not scanned per request. Because that scan is a
+manual step, the response states its own age: `ageSeconds`, plus `stale: true` once the
+snapshot is over a day old. A missing or unparseable timestamp also reports `stale: true` —
+failing towards "trust this data" would be the wrong default for an exposure report. Cached 5
+minutes.
 
 ### `GET /drops`
 
