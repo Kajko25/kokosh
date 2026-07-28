@@ -175,18 +175,31 @@ async function main() {
     console.log("no new blocks since last run");
   }
 
-  const holdings = await fetchTokenHoldings(OWNER);
-  const flaggedNow = new Set(
-    holdings.map((t) => ({ ...t, ...classifyToken(t) })).filter((t) => t.suspicious).map((t) => t.address.toLowerCase())
-  );
-  const knownFlagged = new Set((state.knownFlaggedTokens ?? []).map((a) => a.toLowerCase()));
-  for (const addr of flaggedNow) {
-    if (!knownFlagged.has(addr)) {
-      findings.push(`new suspicious token: ${addr}`);
-      knownFlagged.add(addr);
-    }
+  // The two halves of the check are independent: a Blockscout outage should not discard an
+  // approval finding the chain scan already produced. Previously any holdings failure threw
+  // out of main() and the whole cycle was lost, approvals included.
+  let holdings = null;
+  try {
+    holdings = await fetchTokenHoldings(OWNER, {
+      onTruncated: (n) => console.warn(`holdings truncated at ${n} — page cap reached, scan is partial`),
+    });
+  } catch (err) {
+    console.warn(`holdings scan failed (${err?.message ?? err}) — approval results below are still valid`);
   }
-  state.knownFlaggedTokens = [...knownFlagged];
+
+  if (holdings) {
+    const flaggedNow = new Set(
+      holdings.map((t) => ({ ...t, ...classifyToken(t) })).filter((t) => t.suspicious).map((t) => t.address.toLowerCase())
+    );
+    const knownFlagged = new Set((state.knownFlaggedTokens ?? []).map((a) => a.toLowerCase()));
+    for (const addr of flaggedNow) {
+      if (!knownFlagged.has(addr)) {
+        findings.push(`new suspicious token: ${addr}`);
+        knownFlagged.add(addr);
+      }
+    }
+    state.knownFlaggedTokens = [...knownFlagged];
+  }
   state.lastScannedBlock = latest.toString();
   state.lastRunAt = new Date().toISOString();
 

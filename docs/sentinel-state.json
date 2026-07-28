@@ -7,6 +7,7 @@
     "0x182214259d6a36db5dad514f4e737afb2dec816d",
     "0x1f54305fb775485074ee9fe0e9b86510a18553d4",
     "0x39cb303dabf7195a623b9156633d42c2e3fe8609",
+    "0x3ae45a25f4f73d0157a0c0e3e47f8e7ffa16e99e",
     "0x3b66262eacb826810a369611caa89b97f220e676",
     "0x40211d8fea6c75c4e670615ecc2039c63fb0d8d2",
     "0x49d687ecab7df32265325538e9cb28031f191556",
@@ -35,5 +36,5 @@
     "0xeef2dd4a7f5d14927a11924e2e8447a96fb6d227",
     "0xfdaa4c3d4372e5d123416c1ed4e9374292dd9307"
   ],
-  "baselineNote": "knownFlaggedTokens re-seeded 2026-07-29 after the Blockscout pagination fix: these tokens were always held, only newly *visible* to the scanner. Attesting them as new findings would have misdated the exposure."
+  "baselineNote": "knownFlaggedTokens re-seeded 2026-07-29 after two detection changes \u2014 the Blockscout pagination fix and the bare-domain rule. These tokens were always held; only the scanner's field of view changed. Attesting them as new findings would have misdated the exposure. Rule of thumb: EAS attestations record changes in the wallet, git records changes in the detector."
 }
