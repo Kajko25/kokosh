@@ -20,7 +20,7 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `server.mjs` | local entry point (`npm start`, port 3000) |
 | `api/index.js` | Vercel entry point; `vercel.json` rewrites every path to it |
 | `lib/scamHeuristics.mjs` | `classifyToken()` — the airdrop-scam rules |
-| `lib/blockscout.mjs` | ERC-20 holdings via Blockscout v2 |
+| `lib/blockscout.mjs` | ERC-20 holdings via Blockscout v2, paginated |
 | `lib/exposure.mjs` | reads the committed approval snapshot |
 | `lib/x402Seller.mjs` | x402 payment middleware for `/audit` |
 | `lib/payValidate.mjs` | Base Pay `dataCallback` payer-info validation |
@@ -58,7 +58,9 @@ response is the honest timestamp. For a fresh answer, re-run the scanner. Cached
 
 ### `GET /drops`
 
-Scam-airdrop scan, computed live per request from Blockscout holdings.
+Scam-airdrop scan, computed live per request from Blockscout holdings. Holdings are fetched
+across **all** pages — Blockscout returns 50 per request and this wallet holds ~150, so a
+single-page fetch silently scanned a third of them.
 
 - `200` with `scannedTokens`, `flaggedCount`, and `flagged[]` (each with `address`, `name`,
   `symbol`, `reasons`)
