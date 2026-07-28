@@ -11,14 +11,20 @@ import { validateSignInRequest } from "./lib/signInRequest.mjs";
 import { describeFreshness } from "./lib/freshness.mjs";
 import { failure } from "./lib/httpError.mjs";
 import { createRateLimiter, rateLimitMiddleware } from "./lib/rateLimit.mjs";
+import { createTtlCache } from "./lib/cache.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const WALLET = "0x2984Bb4953cfCE2cEc957388BE686D6c38779234";
 const MAX_LAG_SECONDS = 60;
 
+// One holdings fetch is three Blockscout requests since pagination was fixed, and both
+// /drops and /audit need it. Shared so the two endpoints do not each hold their own copy.
+const holdingsCache = createTtlCache({ ttlMs: 60_000 });
+const cachedHoldings = () => holdingsCache.get(() => fetchTokenHoldings(WALLET));
+
 async function computeAudit() {
-  const [report, holdings] = await Promise.all([readExposureReport(), fetchTokenHoldings(WALLET)]);
+  const [report, holdings] = await Promise.all([readExposureReport(), cachedHoldings()]);
   const flagged = holdings.map((token) => ({ ...token, ...classifyToken(token) })).filter((t) => t.suspicious);
   const liveApprovals = report ? report.erc20Live.length + report.permit2Live.length : 0;
   return {
@@ -172,7 +178,7 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
   app.get("/drops", async (req, res) => {
     res.set("Cache-Control", "public, max-age=1800");
     try {
-      const holdings = await fetchTokenHoldings(WALLET);
+      const holdings = await cachedHoldings();
       const flagged = holdings
         .map((token) => ({ ...token, ...classifyToken(token) }))
         .filter((token) => token.suspicious);

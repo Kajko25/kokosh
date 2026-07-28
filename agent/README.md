@@ -31,6 +31,7 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `lib/nonceStore.mjs` | single-use nonce claims (Vercel KV or memory) |
 | `lib/signInRequest.mjs` | request-shape validation for `/auth/verify` |
 | `lib/rateLimit.mjs` | fixed-window rate limiting for the sign-in endpoints |
+| `lib/cache.mjs` | single-flight TTL cache for upstream holdings reads |
 | `scripts/sentinel-run.mjs` | the autonomous check (see [Sentinel](#sentinel)) |
 | `scripts/sentinel-cron.sh` | jitter / stand-down / daily-cap wrapper around it |
 | `scripts/pay-audit.mjs` | x402 *buyer* — pays another service, proving the other side of the flow |
@@ -102,7 +103,9 @@ single-page fetch silently scanned a third of them.
 - `502 {"error":"holdings_unavailable"}` when Blockscout is unreachable — an upstream failure
   is surfaced, not silently reported as "nothing flagged"
 
-Cached 30 minutes.
+Cached 30 minutes at the HTTP layer, and the underlying holdings fetch is cached in-process
+for 60s and shared with `/audit` — following pagination made one fetch three Blockscout
+requests, and cache-control headers only help callers that honour them.
 
 ### `GET /audit` — paid
 
