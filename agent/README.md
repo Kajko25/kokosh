@@ -176,6 +176,7 @@ any rule fires:
 | Reason | Rule |
 | --- | --- |
 | `name_or_symbol_contains_url` | name or symbol embeds a URL (`https://…`, `www.…`) |
+| `name_or_symbol_contains_bare_domain` | a scheme-less host on a lure TLD (`t.me`, `t.ly`, `PPBox.io`) |
 | `urgency_language` | name matches `claim` / `until` / `expires` / `visit` / `airdrop` |
 | `non_latin_homoglyph` | name or symbol contains Cyrillic or Greek confusables |
 | `impersonates_<TICKER>` | symbol matches a known ticker but the contract is **not** its canonical address |

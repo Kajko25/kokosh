@@ -4,6 +4,13 @@
 // homoglyph confusables mimicking a well-known ticker.
 
 const URL_PATTERN = /(https?:\/\/|www\.)[a-z0-9.-]+\.[a-z]{2,}/i;
+
+// Scam tokens in this wallet advertise bare hosts without a scheme — "PPBox.io",
+// "t.me/s/US_POOL", "t.ly/TRUMP" — which the URL pattern above misses because it requires
+// https:// or www. Matching any dotted word would flag legitimate names ("Rai.Finance",
+// "U. S. ZORA RESERVE"), so this is deliberately restricted to the TLDs actually used for
+// this kind of lure: link shorteners, messengers, and cheap generic domains.
+const BARE_DOMAIN_PATTERN = /\b[a-z0-9][a-z0-9-]*\.(io|me|ly|cc|xyz|top|link|site|app|gg|to|club|online|shop|vip|win)\b/i;
 const CLAIM_PATTERN = /\bclaim\b|\buntil\b|\bexpires?\b|\bvisit\b|\bairdrop\b/i;
 
 // Common Latin-lookalike confusable ranges (Cyrillic, Greek) that show up in ticker spoofing.
@@ -27,6 +34,9 @@ export function classifyToken({ name = "", symbol = "", address = "" }) {
 
   if (URL_PATTERN.test(name) || URL_PATTERN.test(symbol)) {
     reasons.push("name_or_symbol_contains_url");
+  }
+  if (BARE_DOMAIN_PATTERN.test(name) || BARE_DOMAIN_PATTERN.test(symbol)) {
+    reasons.push("name_or_symbol_contains_bare_domain");
   }
   if (CLAIM_PATTERN.test(name)) {
     reasons.push("urgency_language");
