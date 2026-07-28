@@ -9,6 +9,7 @@ import { issueNonce, verifySignIn } from "./lib/siwb.mjs";
 import { validatePayerInfo } from "./lib/payValidate.mjs";
 import { validateSignInRequest } from "./lib/signInRequest.mjs";
 import { describeFreshness } from "./lib/freshness.mjs";
+import { failure } from "./lib/httpError.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -121,7 +122,9 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
         blockNumber: block.number.toString(),
       });
     } catch (err) {
-      res.status(503).json({ status: "unreachable", error: String(err?.shortMessage ?? err) });
+      // Keeps the documented {status} shape for this endpoint while still not echoing the
+      // library's own diagnostics back to the caller.
+      failure(res, { status: 503, code: "rpc_unreachable", error: err, extra: { status: "unreachable" } });
     }
   });
 
@@ -156,7 +159,7 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
         flagged: flagged.map(({ address, name, symbol, reasons }) => ({ address, name, symbol, reasons })),
       });
     } catch (err) {
-      res.status(502).json({ error: String(err?.message ?? err) });
+      failure(res, { status: 502, code: "holdings_unavailable", error: err });
     }
   });
 
@@ -165,7 +168,7 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
     try {
       res.json(await computeAudit());
     } catch (err) {
-      res.status(502).json({ error: String(err?.message ?? err) });
+      failure(res, { status: 502, code: "audit_unavailable", error: err });
     }
   });
 

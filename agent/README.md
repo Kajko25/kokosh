@@ -26,6 +26,10 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `lib/payValidate.mjs` | Base Pay `dataCallback` payer-info validation |
 | `lib/siwb.mjs` | Sign In With Base nonce issue + signature verification |
 | `lib/rangeScan.mjs` | block-range windowing and rate-limit retry for the sentinel |
+| `lib/freshness.mjs` | snapshot age / staleness reporting |
+| `lib/httpError.mjs` | error envelope: stable code to the client, detail to the log |
+| `lib/nonceStore.mjs` | single-use nonce claims (Vercel KV or memory) |
+| `lib/signInRequest.mjs` | request-shape validation for `/auth/verify` |
 | `scripts/sentinel-run.mjs` | the autonomous check (see [Sentinel](#sentinel)) |
 | `scripts/sentinel-cron.sh` | jitter / stand-down / daily-cap wrapper around it |
 | `scripts/pay-audit.mjs` | x402 *buyer* — pays another service, proving the other side of the flow |
@@ -43,7 +47,7 @@ timestamp to now.
 - `200 {"status":"ok","lagSeconds":N,"blockNumber":"..."}`
 - `503 {"status":"degraded",...}` when `lagSeconds > 60` — a reachable but stale node is a real
   failure mode for a monitor, so it is not reported as healthy
-- `503 {"status":"unreachable","error":"..."}` when the call throws
+- `503 {"status":"unreachable","error":"rpc_unreachable"}` when the call throws
 
 ### `GET /exposure`
 
@@ -68,8 +72,8 @@ single-page fetch silently scanned a third of them.
 
 - `200` with `scannedTokens`, `flaggedCount`, and `flagged[]` (each with `address`, `name`,
   `symbol`, `reasons`)
-- `502` when Blockscout is unreachable — an upstream failure is surfaced, not silently
-  reported as "nothing flagged"
+- `502 {"error":"holdings_unavailable"}` when Blockscout is unreachable — an upstream failure
+  is surfaced, not silently reported as "nothing flagged"
 
 Cached 30 minutes.
 
