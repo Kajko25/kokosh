@@ -39,11 +39,62 @@ function loadState() {
   return JSON.parse(readFileSync(STATE_PATH, "utf8"));
 }
 
+// Base's public RPC rejects any eth_getLogs spanning more than 10,000 blocks
+// (error -32614, "eth_getLogs is limited to a 10,000 range"). A daily cron already
+// covers ~43,000 blocks, so an unchunked scan fails on every run that isn't nearly
+// back-to-back with the previous one — walk the range in windows instead.
+const MAX_LOG_RANGE = BigInt(process.env.MAX_LOG_RANGE ?? 9500);
+
+// DRY_RUN exercises the whole scan — including the chunked range walk, which is the part
+// that actually broke — without submitting an attestation or advancing the state file,
+// so a fix can be verified against real mainnet data without on-chain side effects.
+const DRY_RUN = process.env.DRY_RUN === "1";
+
+// Walking a long range means dozens of sequential calls, and Base's public RPC starts
+// answering -32016 "over rate limit" well before that finishes. Pace the windows and back
+// off on rate-limit errors rather than letting one throttled window kill the whole run.
+const WINDOW_DELAY_MS = Number(process.env.WINDOW_DELAY_MS ?? 250);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function withRateLimitRetry(fn, label) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const rateLimited = err?.cause?.code === -32016 || /over rate limit/i.test(err?.details ?? "");
+      if (!rateLimited || attempt >= 4) throw err;
+      const wait = 2000 * 2 ** attempt;
+      console.log(`rate limited on ${label}, retrying in ${wait}ms (attempt ${attempt + 1}/5)`);
+      await sleep(wait);
+    }
+  }
+}
+
+async function getLogsChunked(event, fromBlock, toBlock) {
+  const logs = [];
+  for (let start = fromBlock; start <= toBlock; start += MAX_LOG_RANGE) {
+    const last = start + MAX_LOG_RANGE - 1n;
+    const end = last > toBlock ? toBlock : last;
+    const window = await withRateLimitRetry(
+      () => client.getLogs({ event, args: { owner: OWNER }, fromBlock: start, toBlock: end }),
+      `blocks ${start}-${end}`
+    );
+    logs.push(...window);
+    if (end < toBlock) await sleep(WINDOW_DELAY_MS);
+  }
+  return logs;
+}
+
 async function scanNewApprovals(fromBlock, toBlock) {
-  const [erc20Logs, permit2Logs] = await Promise.all([
-    client.getLogs({ event: ERC20_APPROVAL, args: { owner: OWNER }, fromBlock, toBlock }),
-    client.getLogs({ event: PERMIT2_APPROVAL, args: { owner: OWNER }, fromBlock, toBlock }),
-  ]);
+  const windows = (toBlock - fromBlock) / MAX_LOG_RANGE + 1n;
+  if (windows > 1n) {
+    console.log(`range spans ${toBlock - fromBlock + 1n} blocks — splitting into ${windows} windows of <=${MAX_LOG_RANGE}`);
+  }
+
+  // Deliberately sequential, not Promise.all: running both chunked walks at once doubles
+  // the request rate against the same throttled endpoint, which is what tripped the limit.
+  const erc20Logs = await getLogsChunked(ERC20_APPROVAL, fromBlock, toBlock);
+  const permit2Logs = await getLogsChunked(PERMIT2_APPROVAL, fromBlock, toBlock);
 
   const pairs = new Map();
   for (const log of erc20Logs) {
@@ -57,23 +108,33 @@ async function scanNewApprovals(fromBlock, toBlock) {
     pairs.set(`permit2:${token}:${spender}`, { kind: "permit2", token, spender });
   }
 
+  // One allowance read per discovered pair — the same throttled endpoint, so the same
+  // pacing applies here as to the log windows above.
   const live = [];
   for (const p of pairs.values()) {
     if (p.kind === "erc20") {
-      const amount = await client.readContract({
-        address: p.token,
-        abi: [parseAbiItem("function allowance(address,address) view returns (uint256)")],
-        functionName: "allowance",
-        args: [OWNER, p.spender],
-      });
+      const amount = await withRateLimitRetry(
+        () =>
+          client.readContract({
+            address: p.token,
+            abi: [parseAbiItem("function allowance(address,address) view returns (uint256)")],
+            functionName: "allowance",
+            args: [OWNER, p.spender],
+          }),
+        `allowance ${p.token} -> ${p.spender}`
+      );
       if (amount > 0n) live.push({ ...p, amount: amount.toString() });
     } else {
-      const [amount, expiration] = await client.readContract({
-        address: PERMIT2,
-        abi: [parseAbiItem("function allowance(address,address,address) view returns (uint160,uint48,uint48)")],
-        functionName: "allowance",
-        args: [OWNER, p.token, p.spender],
-      });
+      const [amount, expiration] = await withRateLimitRetry(
+        () =>
+          client.readContract({
+            address: PERMIT2,
+            abi: [parseAbiItem("function allowance(address,address,address) view returns (uint160,uint48,uint48)")],
+            functionName: "allowance",
+            args: [OWNER, p.token, p.spender],
+          }),
+        `permit2 allowance ${p.token} -> ${p.spender}`
+      );
       if (amount > 0n && expiration > Math.floor(Date.now() / 1000)) {
         live.push({ ...p, amount: amount.toString(), expiration });
       }
@@ -154,11 +215,19 @@ async function main() {
     if (findings.some((f) => f.startsWith("new live approval"))) {
       console.log("NOTE: new live approval(s) require a human to revoke via 0x2984's Ledger — the agent cannot sign for the owner's own wallet.");
     }
-    const out = await attestFinding(findings.length, summary);
-    console.log(out);
+    if (DRY_RUN) {
+      console.log("DRY_RUN — skipping the attestation that would normally be submitted here");
+    } else {
+      const out = await attestFinding(findings.length, summary);
+      console.log(out);
+    }
   }
 
-  writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
+  if (DRY_RUN) {
+    console.log("DRY_RUN — not writing docs/sentinel-state.json");
+  } else {
+    writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
+  }
 }
 
 main().catch((err) => {

@@ -37,9 +37,24 @@ fi
 jitter=$((RANDOM % MAX_JITTER_SECONDS))
 echo "$(date -u -Iseconds) sleeping ${jitter}s of jitter before running"
 sleep "$jitter"
+# Logged separately from the line above so a run killed mid-jitter (the WSL2 session
+# ending, say) is distinguishable from one that reached the scan and then failed.
+echo "$(date -u -Iseconds) jitter complete, starting scan"
 
+# `set -e` plus command substitution would abort here on a non-zero exit *before* the
+# captured output ever reached the log — which is exactly how a hard eth_getLogs failure
+# stayed invisible for days, looking identical to a clean silent run. Capture the status.
+set +e
 output="$(cd agent && node scripts/sentinel-run.mjs 2>&1)"
+rc=$?
+set -e
 echo "$output"
+
+if [ "$rc" -ne 0 ]; then
+  echo "$(date -u -Iseconds) sentinel-run FAILED (exit $rc) — output above, state not advanced"
+  exit "$rc"
+fi
+echo "$(date -u -Iseconds) run finished cleanly"
 
 if echo "$output" | grep -q "finding(s):"; then
   python3 -c "
