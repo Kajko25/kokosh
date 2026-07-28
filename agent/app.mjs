@@ -187,6 +187,29 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
     res.json(agentCard({ auditMode }));
   });
 
+  // The agent's own URL answered with Express's default "Cannot GET /" HTML page — and 500
+  // in production, where the payment middleware is mounted. An agent's front door should say
+  // what it is and where its machine-readable description lives.
+  app.get("/", (req, res) => {
+    res.set("Cache-Control", "public, max-age=300");
+    const card = agentCard({ auditMode });
+    res.json({
+      name: card.name,
+      description: card.description,
+      agentCard: "/.well-known/agent-card.json",
+      endpoints: card.endpoints,
+      pages: ["/signin.html", "/pay.html", "/subaccount.html", "/subscribe.html", "/prolink.html"],
+      source: "https://github.com/Kajko25/kokosh",
+    });
+  });
+
+  // Everything else is JSON, so unmatched routes should be too — the default handler replies
+  // with an HTML error page that also echoes the requested path back.
+  app.use((req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.status(404).json({ error: "not_found" });
+  });
+
   return app;
 }
 

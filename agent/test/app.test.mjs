@@ -89,3 +89,44 @@ test("agent-card.json includes the wallet and endpoints", async () => {
   // the default "paid" — see test/auditMode.test.mjs.
   assert.deepEqual(body, agentCard({ auditMode: "unavailable" }));
 });
+
+test("the root path describes the agent instead of erroring", async () => {
+  // Previously Express's default handler answered "Cannot GET /" as HTML — and 500 in
+  // production, where the payment middleware is mounted.
+  const app = makeApp({ client: {} });
+  const server = await listen(app);
+  const { port } = server.address();
+
+  let res, body;
+  try {
+    res = await fetch(`http://localhost:${port}/`);
+    body = await res.json();
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+  }
+
+  assert.equal(res.status, 200);
+  assert.equal(body.name, "Kokosh");
+  assert.equal(body.agentCard, "/.well-known/agent-card.json");
+});
+
+test("unmatched routes answer JSON, not an HTML error page", async () => {
+  const app = makeApp({ client: {} });
+  const server = await listen(app);
+  const { port } = server.address();
+
+  let res, body;
+  try {
+    res = await fetch(`http://localhost:${port}/definitely-not-a-route`);
+    body = await res.json();
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+  }
+
+  assert.equal(res.status, 404);
+  assert.deepEqual(body, { error: "not_found" });
+  // The default page echoes the requested path back; this one does not.
+  assert.equal(JSON.stringify(body).includes("definitely-not-a-route"), false);
+});

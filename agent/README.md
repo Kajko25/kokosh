@@ -40,6 +40,14 @@ what lets `test/app.test.mjs` drive every route against a stub with no network.
 
 ## HTTP API
 
+### `GET /`
+
+Describes the agent: name, description, a pointer to the agent card, the endpoint map, the
+browser pages under `public/`, and the source repository. Previously this answered Express's
+default `Cannot GET /` HTML page — and 500 in production, where the payment middleware is
+mounted. Unmatched routes now answer `404 {"error":"not_found"}` as JSON rather than an HTML
+error page that echoes the requested path back.
+
 ### `GET /healthz`
 
 Liveness plus a freshness check on the RPC connection. Reads the latest block and compares its
