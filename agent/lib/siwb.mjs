@@ -2,6 +2,7 @@ import { createPublicClient, http } from "viem";
 import { base } from "viem/chains";
 import { randomBytes } from "node:crypto";
 import { createNonce, checkNonce, DEFAULT_TTL_SECONDS } from "./nonce.mjs";
+import { createNonceStore, NonceStoreUnavailable } from "./nonceStore.mjs";
 
 const client = createPublicClient({ chain: base, transport: http("https://mainnet.base.org") });
 
@@ -20,15 +21,12 @@ function ephemeralSecret() {
   return randomBytes(32).toString("hex");
 }
 
-// Best-effort replay protection within one instance. The nonce's own expiry is what bounds
-// replay across instances; this catches the common single-instance case outright. Entries are
-// pruned by expiry, so unlike the old Set this cannot grow without bound.
-const consumed = new Map();
+// Single-use enforcement. Backed by Vercel KV when configured (shared across instances),
+// per-process memory otherwise — see nonceStore.mjs.
+const store = createNonceStore();
 
-function prune(nowSeconds) {
-  for (const [nonce, expiresAt] of consumed) {
-    if (expiresAt <= nowSeconds) consumed.delete(nonce);
-  }
+export function nonceStoreKind() {
+  return store.kind;
 }
 
 export function issueNonce() {
@@ -40,11 +38,6 @@ export async function verifySignIn({ address, message, signature }, { verifyMess
   if (!nonceMatch) return { ok: false, error: "missing_nonce" };
 
   const nonce = nonceMatch[1];
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  prune(nowSeconds);
-
-  if (consumed.has(nonce)) return { ok: false, error: "nonce_already_used" };
-
   const check = checkNonce(nonce, { secret: SECRET });
   if (!check.ok) return { ok: false, error: check.error };
 
@@ -53,9 +46,21 @@ export async function verifySignIn({ address, message, signature }, { verifyMess
   const valid = await verify({ address, message, signature });
   if (!valid) return { ok: false, error: "invalid_signature" };
 
-  // Consumed only after the signature checks out, so a failed attempt cannot be used to burn
-  // someone else's in-flight nonce.
-  consumed.set(nonce, check.expiresAt);
+  // Claimed only after the signature checks out, so a failed attempt cannot burn someone
+  // else's in-flight nonce. The claim is atomic, so of two simultaneous valid submissions of
+  // the same nonce exactly one wins.
+  let claimed;
+  try {
+    claimed = await store.claim(nonce, check.expiresAt);
+  } catch (err) {
+    if (err instanceof NonceStoreUnavailable) {
+      // Fail closed: an unreachable store must not silently downgrade to "replay allowed".
+      console.error(err.message);
+      return { ok: false, error: "nonce_store_unavailable" };
+    }
+    throw err;
+  }
+  if (!claimed) return { ok: false, error: "nonce_already_used" };
 
   return { ok: true, address };
 }

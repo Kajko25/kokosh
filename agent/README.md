@@ -124,15 +124,22 @@ consume the nonce, so a bad submission can't burn someone else's in-flight sign-
 | --- | --- | --- |
 | `SIWB_NONCE_SECRET` | per-process random | HMAC key; **must be shared** across instances |
 | `SIWB_NONCE_TTL` | `300` | nonce lifetime in seconds |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | unset | Vercel KV, for cross-instance single use |
 
 Without `SIWB_NONCE_SECRET` the module generates a per-process secret and warns loudly at
 startup — that reproduces the old instance-affinity failure, so it is a development
 convenience, not a deployment option.
 
-**Known limit:** guaranteed single use needs shared state. The in-process consumed-set blocks
-replay on the instance that handled the sign-in, and the TTL bounds it everywhere else, but two
-instances cannot agree that a nonce was already spent. Closing that fully requires a shared
-store (KV/Redis); the TTL is deliberately short for that reason.
+**Single use is enforced through a store** (`lib/nonceStore.mjs`). With Vercel KV configured the
+claim is a single atomic `SET <nonce> 1 NX EXAT <expiry>`: exactly one caller can win even if two
+requests race, the key expires with the nonce so nothing accumulates, and every instance sees the
+same answer. Without KV it falls back to a per-process map, which still blocks replay on the
+instance that handled the sign-in but cannot see what other instances have spent.
+
+If the store is configured but unreachable, sign-in **fails closed** (`nonce_store_unavailable`).
+Returning "not yet used" on a store error would silently re-enable exactly the replay the store
+exists to prevent. A half-configured KV (one of the two variables) falls back to memory rather
+than failing every sign-in.
 
 ### `POST /pay/validate`
 
