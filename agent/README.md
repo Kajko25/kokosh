@@ -109,13 +109,30 @@ verifies the signature with viem's `verifyMessage` (which handles ERC-6492 for s
 that are not yet deployed).
 
 - `200 {"ok":true,"address":"0x..."}`
-- `401` on `invalid_or_reused_nonce` or `invalid_signature`
+- `401` with `missing_nonce`, `malformed_nonce`, `invalid_nonce_signature`, `expired_nonce`,
+  `nonce_already_used`, or `invalid_signature`
 - `400 {"error":"missing_fields"}`
 
-**Caveat:** nonces live in an in-process `Set`. On Vercel's serverless runtime a verify request
-can land on a different instance than the one that issued the nonce, in which case it fails
-closed (rejected as unknown) rather than open. Fine for a demo; a shared store is required
-before this is load-bearing.
+**Nonces are stateless.** Each one is `<16 hex random><8 hex expiry><32 hex HMAC>` — 56
+alphanumeric characters, as SIWE requires — signed with `SIWB_NONCE_SECRET`. Any instance
+holding that secret can validate a nonce any other instance issued, which is what makes
+sign-in work on a serverless runtime at all. An invalid nonce short-circuits before the
+signature check, so a forged one never costs an RPC call. A failed signature does **not**
+consume the nonce, so a bad submission can't burn someone else's in-flight sign-in.
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `SIWB_NONCE_SECRET` | per-process random | HMAC key; **must be shared** across instances |
+| `SIWB_NONCE_TTL` | `300` | nonce lifetime in seconds |
+
+Without `SIWB_NONCE_SECRET` the module generates a per-process secret and warns loudly at
+startup — that reproduces the old instance-affinity failure, so it is a development
+convenience, not a deployment option.
+
+**Known limit:** guaranteed single use needs shared state. The in-process consumed-set blocks
+replay on the instance that handled the sign-in, and the TTL bounds it everywhere else, but two
+instances cannot agree that a nonce was already spent. Closing that fully requires a shared
+store (KV/Redis); the TTL is deliberately short for that reason.
 
 ### `POST /pay/validate`
 
