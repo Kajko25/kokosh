@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeApp, agentCard, resolveAuditMode } from "../lib/app.mjs";
+import { makeApp, agentCard, resolveAuditMode } from "../app.mjs";
 import { warnOnAuditMode } from "../lib/auditMode.mjs";
 
 function listen(app) {

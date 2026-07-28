@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRateLimiter, clientKey } from "../lib/rateLimit.mjs";
-import { makeApp } from "../lib/app.mjs";
+import { makeApp } from "../app.mjs";
 
 function listen(app) {
   return new Promise((resolve) => {

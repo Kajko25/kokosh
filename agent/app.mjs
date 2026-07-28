@@ -1,17 +1,17 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { classifyToken } from "./scamHeuristics.mjs";
-import { fetchTokenHoldings } from "./blockscout.mjs";
-import { readExposureReport } from "./exposure.mjs";
-import { buildAuditPaymentMiddleware, AGENT_WALLET, AUDIT_PRICE, AUDIT_NETWORK } from "./x402Seller.mjs";
-import { issueNonce, verifySignIn, nonceStoreKind } from "./siwb.mjs";
-import { validatePayerInfo } from "./payValidate.mjs";
-import { validateSignInRequest } from "./signInRequest.mjs";
-import { describeFreshness } from "./freshness.mjs";
-import { failure } from "./httpError.mjs";
-import { createRateLimiter, rateLimitMiddleware } from "./rateLimit.mjs";
-import { createTtlCache } from "./cache.mjs";
+import { classifyToken } from "./lib/scamHeuristics.mjs";
+import { fetchTokenHoldings } from "./lib/blockscout.mjs";
+import { readExposureReport } from "./lib/exposure.mjs";
+import { buildAuditPaymentMiddleware, AGENT_WALLET, AUDIT_PRICE, AUDIT_NETWORK } from "./lib/x402Seller.mjs";
+import { issueNonce, verifySignIn, nonceStoreKind } from "./lib/siwb.mjs";
+import { validatePayerInfo } from "./lib/payValidate.mjs";
+import { validateSignInRequest } from "./lib/signInRequest.mjs";
+import { describeFreshness } from "./lib/freshness.mjs";
+import { failure } from "./lib/httpError.mjs";
+import { createRateLimiter, rateLimitMiddleware } from "./lib/rateLimit.mjs";
+import { createTtlCache } from "./lib/cache.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -84,7 +84,7 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
     // sign-in flows that are known to work. Left as a documented gap rather than a guess.
     next();
   });
-  app.use(express.static(join(__dirname, "..", "public")));
+  app.use(express.static(join(__dirname, "public")));
 
   const auditMode = resolveAuditMode({ cdp, allowUnpaidAudit });
 
@@ -262,4 +262,22 @@ export function agentCard({ auditMode = "paid" } = {}) {
         ? { "/audit": { scheme: "x402", protocol: "exact", price: AUDIT_PRICE, network: AUDIT_NETWORK, payTo: AGENT_WALLET } }
         : null,
   };
+}
+
+// Vercel's Node builder selects app.mjs as the function entrypoint — it is the root file
+// importing express — and invokes its default export. Without one, every request routed
+// here failed with FUNCTION_INVOCATION_FAILED ("the default export must be a function or
+// server"), which is what made GET / a 500 in production while the routes reached through
+// api/index.js worked fine.
+//
+// Built lazily so merely importing this module stays side-effect free: the tests import
+// makeApp directly and must not spin up a client or emit startup warnings.
+let configuredApp = null;
+
+export default async function handler(req, res) {
+  if (!configuredApp) {
+    const { buildConfiguredApp } = await import("./lib/configuredApp.mjs");
+    configuredApp = buildConfiguredApp(makeApp, { resolveAuditMode });
+  }
+  return configuredApp(req, res);
 }

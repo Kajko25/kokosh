@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeApp, agentCard } from "../lib/app.mjs";
+import { makeApp, agentCard } from "../app.mjs";
 
 function listen(app) {
   return new Promise((resolve) => {
