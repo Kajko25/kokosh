@@ -8,15 +8,21 @@ scam-airdrop tokens by name/URL/homoglyph heuristics, and sells a paid `/audit` 
 - Live agent: https://kokosh-agent.vercel.app
 - Agent card: https://kokosh-agent.vercel.app/.well-known/agent-card.json
 - ERC-8004 identity: agentId `59633` on the Base mainnet Identity Registry
+- **Agent documentation: [agent/README.md](agent/README.md)** — endpoints, scam heuristics, the sentinel loop and its limits
 - Journal: [docs/JOURNAL.md](docs/JOURNAL.md) — every on-chain action with tx hashes and lessons learned
 
 ## Structure
 
+- `agent/` — the agent itself: Node/Express app (`makeApp` factory) serving `/healthz`,
+  `/exposure`, `/drops` and the x402-paid `/audit`, plus `agent/scripts/` — the autonomous
+  sentinel (`sentinel-run.mjs`, `sentinel-cron.sh`) and the x402 buyer (`pay-audit.mjs`).
+  Deployed to Vercel. **Start here: [agent/README.md](agent/README.md)**
 - `contracts/` — Foundry project: `Waypoint` (CREATE2 profile registry), `Waymarks` (on-chain SVG
   badge NFT), `EncodeMirmil.s.sol` (local pure-encoder for the MIRMIL B20 token, no chain calls)
-- `agent/` — Node/Express agent (`makeApp` factory, `/healthz`, `/exposure`, `/drops`, paid
-  `/audit` via x402), deployed to Vercel
-- `scripts/` — `scan-approvals.mjs`, a from-scratch ERC-20 + Permit2 approval scanner
+- `scripts/` — operational one-offs run against the wallet, not part of the agent runtime:
+  `scan-approvals.mjs` (from-scratch ERC-20 + Permit2 approval scanner, produces the snapshot
+  `/exposure` serves), `l2l1-withdrawal.mjs`, `erc4337-usdc-gas.mjs`, `spend-permission.mjs`,
+  `make-prolink.mjs`, `convert-solana-key.mjs`
 
 ## Signing
 
