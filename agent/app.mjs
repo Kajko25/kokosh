@@ -7,6 +7,7 @@ import { readExposureReport } from "./lib/exposure.mjs";
 import { buildAuditPaymentMiddleware } from "./lib/x402Seller.mjs";
 import { issueNonce, verifySignIn } from "./lib/siwb.mjs";
 import { validatePayerInfo } from "./lib/payValidate.mjs";
+import { validateSignInRequest } from "./lib/signInRequest.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -87,13 +88,16 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
 
   app.post("/auth/verify", async (req, res) => {
     res.set("Cache-Control", "no-store");
-    const { address, message, signature } = req.body ?? {};
-    if (!address || !message || !signature) {
-      res.status(400).json({ error: "missing_fields" });
+    const parsed = validateSignInRequest(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
       return;
     }
-    const result = await verifySignIn({ address, message, signature });
-    res.status(result.ok ? 200 : 401).json(result);
+    const result = await verifySignIn(parsed.value);
+    // A store outage is a server-side failure, not a rejected credential — reporting it as
+    // 401 would tell an honest client its signature was bad.
+    const status = result.ok ? 200 : result.error === "nonce_store_unavailable" ? 503 : 401;
+    res.status(status).json(result);
   });
 
   app.post("/pay/validate", (req, res) => {

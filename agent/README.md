@@ -109,9 +109,13 @@ verifies the signature with viem's `verifyMessage` (which handles ERC-6492 for s
 that are not yet deployed).
 
 - `200 {"ok":true,"address":"0x..."}`
+- `400` with `missing_fields`, `invalid_field_types`, `invalid_address`, `message_too_large`,
+  or `invalid_signature_encoding` — request shape is validated before anything reaches the
+  nonce regex or an RPC call
 - `401` with `missing_nonce`, `malformed_nonce`, `invalid_nonce_signature`, `expired_nonce`,
   `nonce_already_used`, or `invalid_signature`
-- `400 {"error":"missing_fields"}`
+- `503 {"error":"nonce_store_unavailable"}` — a store outage is a server failure, not a
+  rejected credential, so it must not be reported to an honest client as a bad signature
 
 **Nonces are stateless.** Each one is `<16 hex random><8 hex expiry><32 hex HMAC>` — 56
 alphanumeric characters, as SIWE requires — signed with `SIWB_NONCE_SECRET`. Any instance
