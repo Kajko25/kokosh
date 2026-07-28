@@ -161,14 +161,14 @@ async function main() {
   );
 
   const report = { owner: OWNER, scannedAt: new Date().toISOString(), erc20Live, permit2Live };
-  writeFileSync(new URL("../docs/approvals-report.json", import.meta.url), JSON.stringify(report, null, 2));
+  writeFileSync(new URL("../agent/data/approvals-report.json", import.meta.url), JSON.stringify(report, null, 2));
 
   console.log("\n=== LIVE ERC-20 APPROVALS ===");
   for (const a of erc20Live) console.log(`  ${a.symbol} (${a.token}) -> ${a.spender}: ${a.amount}`);
   console.log("\n=== LIVE PERMIT2 GRANTS ===");
   for (const a of permit2Live) console.log(`  ${a.symbol} (${a.token}) -> ${a.spender}: ${a.amount} exp=${a.expiration}`);
   console.log(`\nTotal live: ${erc20Live.length} ERC-20 approvals, ${permit2Live.length} Permit2 grants.`);
-  console.log("Report written to docs/approvals-report.json");
+  console.log("Report written to agent/data/approvals-report.json");
 }
 
 main().catch((err) => {

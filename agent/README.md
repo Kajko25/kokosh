@@ -21,7 +21,7 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `api/index.js` | Vercel entry point; `vercel.json` rewrites every path to it |
 | `lib/scamHeuristics.mjs` | `classifyToken()` — the airdrop-scam rules |
 | `lib/blockscout.mjs` | ERC-20 holdings via Blockscout v2, paginated |
-| `lib/exposure.mjs` | reads the committed approval snapshot |
+| `lib/exposure.mjs` | reads the committed approval snapshot from `data/` |
 | `lib/x402Seller.mjs` | x402 payment middleware for `/audit` |
 | `lib/payValidate.mjs` | Base Pay `dataCallback` payer-info validation |
 | `lib/siwb.mjs` | Sign In With Base nonce issue + signature verification |
@@ -92,7 +92,7 @@ Live approval exposure for the wallet.
   `permit2Grants` arrays, and freshness fields `scannedAt`, `ageSeconds`, `stale`
 - `202 {"status":"not_scanned_yet"}` when no snapshot exists
 
-**Caveat, by design:** this serves `docs/approvals-report.json`, a snapshot committed to the
+**Caveat, by design:** this serves `data/approvals-report.json`, a snapshot committed to the
 repo by `scripts/scan-approvals.mjs` — it is not scanned per request. Because that scan is a
 manual step, the response states its own age: `ageSeconds`, plus `stale: true` once the
 snapshot is over a day old. A missing or unparseable timestamp also reports `stale: true` —

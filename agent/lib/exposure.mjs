@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-const REPORT_PATH = fileURLToPath(new URL("../../docs/approvals-report.json", import.meta.url));
+// Inside the agent package on purpose: agent/ is the Vercel project root, so anything above
+// it is simply not deployed. While this lived in docs/, /exposure answered "not_scanned_yet"
+// in production forever and /audit sold a report whose exposure section was always empty.
+const REPORT_PATH = fileURLToPath(new URL("../data/approvals-report.json", import.meta.url));
 
 /**
  * Read the committed approval snapshot.
