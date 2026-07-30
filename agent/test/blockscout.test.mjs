@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fetchTokenHoldings } from "../lib/blockscout.mjs";
+import { fetchTokenHoldings, fetchNftHoldings } from "../lib/blockscout.mjs";
 
 const ADDRESS = "0x2984Bb4953cfCE2cEc957388BE686D6c38779234";
 
@@ -10,6 +10,22 @@ function page(items, next = null) {
     status: 200,
     json: async () => ({
       items: items.map((symbol) => ({ token: { address_hash: `0x${symbol}`, name: symbol, symbol }, value: "1" })),
+      next_page_params: next,
+    }),
+  };
+}
+
+// NFT pages carry the standard in token.type and repeat a contract once per token_id held.
+function nftPage(entries, next = null) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      items: entries.map(([symbol, type, tokenId = "1"]) => ({
+        token: { address_hash: `0x${symbol}`, name: symbol, symbol, type },
+        token_id: tokenId,
+        value: "1",
+      })),
       next_page_params: next,
     }),
   };
@@ -101,5 +117,72 @@ test("missing token metadata degrades to empty strings rather than undefined", a
     json: async () => ({ items: [{ value: "5" }], next_page_params: null }),
   });
   const [holding] = await fetchTokenHoldings(ADDRESS, { fetchImpl });
-  assert.deepEqual(holding, { address: undefined, name: "", symbol: "", balance: "5" });
+  assert.deepEqual(holding, { address: undefined, name: "", symbol: "", balance: "5", standard: "" });
+});
+
+test("NFT holdings cover both standards in one call", async () => {
+  // Two separate type filters upstream: reporting only ERC-721 would leave the wallet's
+  // ERC-1155 scam collections — the larger group of the two — entirely unscanned.
+  const { fetchImpl, urls } = stub([
+    nftPage([["AAA", "ERC-721"]]),
+    nftPage([["BBB", "ERC-1155"]]),
+  ]);
+
+  const nfts = await fetchNftHoldings(ADDRESS, { fetchImpl });
+  assert.deepEqual(nfts.map((n) => n.symbol), ["AAA", "BBB"]);
+  assert.deepEqual(nfts.map((n) => n.standard), ["ERC-721", "ERC-1155"]);
+  assert.deepEqual(
+    urls.map((u) => new URL(u).searchParams.get("type")),
+    ["ERC-721", "ERC-1155"]
+  );
+});
+
+test("a collection held as several token_ids is folded into one entry", async () => {
+  // The live wallet holds 71 ERC-1155 items across 56 contracts. Unfolded, one scam
+  // collection would be reported — and counted — once per piece held.
+  const { fetchImpl } = stub([
+    nftPage([]),
+    nftPage([
+      ["DUP", "ERC-1155", "1"],
+      ["DUP", "ERC-1155", "2"],
+      ["DUP", "ERC-1155", "3"],
+      ["OTHER", "ERC-1155"],
+    ]),
+  ]);
+
+  const nfts = await fetchNftHoldings(ADDRESS, { fetchImpl });
+  assert.deepEqual(nfts.map((n) => [n.symbol, n.instanceCount]), [
+    ["DUP", 3],
+    ["OTHER", 1],
+  ]);
+});
+
+test("NFT entries carry no balance field", async () => {
+  // `value` is per-token_id, so a collection-level balance would be a meaningless number;
+  // instanceCount is the honest quantity here.
+  const { fetchImpl } = stub([nftPage([["AAA", "ERC-721"]]), nftPage([])]);
+  const [nft] = await fetchNftHoldings(ADDRESS, { fetchImpl });
+  assert.equal("balance" in nft, false);
+  assert.equal(nft.instanceCount, 1);
+});
+
+test("pagination is followed for each NFT standard", async () => {
+  const { fetchImpl } = stub([
+    nftPage([["A", "ERC-721"]], { id: 2 }),
+    nftPage([["B", "ERC-721"]]),
+    nftPage([["C", "ERC-1155"]], { id: 3 }),
+    nftPage([["D", "ERC-1155"]]),
+  ]);
+
+  const nfts = await fetchNftHoldings(ADDRESS, { fetchImpl });
+  assert.deepEqual(nfts.map((n) => n.symbol), ["A", "B", "C", "D"]);
+});
+
+test("an ERC-1155 failure is not hidden by a successful ERC-721 walk", async () => {
+  // Half the NFT picture presented as the whole is the same silent-truncation failure the
+  // ERC-20 pagination bug was.
+  const fetchImpl = async (url) =>
+    url.includes("ERC-1155") ? { ok: false, status: 503, json: async () => ({}) } : nftPage([["A", "ERC-721"]]);
+
+  await assert.rejects(fetchNftHoldings(ADDRESS, { fetchImpl }), /503/);
 });

@@ -23,22 +23,23 @@ function normalise(items) {
     name: item.token?.name ?? "",
     symbol: item.token?.symbol ?? "",
     balance: item.value,
+    standard: item.token?.type ?? "",
   }));
 }
 
 /**
- * All ERC-20 holdings for an address, following pagination.
+ * Walk one token type's holdings, following pagination.
  *
  * `maxPages` bounds the walk so a pathological account cannot stall the request path
  * indefinitely. Hitting that cap calls `onTruncated` rather than being swallowed the way the
  * single-page version's truncation was.
  */
-export async function fetchTokenHoldings(address, { fetchImpl = fetch, maxPages = MAX_PAGES, onTruncated } = {}) {
+async function fetchHoldingsOfType(address, type, { fetchImpl = fetch, maxPages = MAX_PAGES, onTruncated } = {}) {
   const holdings = [];
   let params = null;
 
   for (let page = 0; page < maxPages; page++) {
-    const query = new URLSearchParams({ type: "ERC-20" });
+    const query = new URLSearchParams({ type });
     for (const [key, value] of Object.entries(params ?? {})) {
       if (value !== null && value !== undefined) query.set(key, String(value));
     }
@@ -52,4 +53,45 @@ export async function fetchTokenHoldings(address, { fetchImpl = fetch, maxPages 
 
   onTruncated?.(holdings.length);
   return holdings;
+}
+
+/** All ERC-20 holdings for an address. */
+export function fetchTokenHoldings(address, options = {}) {
+  return fetchHoldingsOfType(address, "ERC-20", options);
+}
+
+export const NFT_STANDARDS = ["ERC-721", "ERC-1155"];
+
+/**
+ * All NFT holdings for an address, as one entry per *collection*.
+ *
+ * Two things make this different from the ERC-20 walk rather than a parameter change:
+ *
+ * 1. NFTs live under two separate `type` filters, so this is two paginated walks.
+ * 2. The endpoint returns one item per `token_id`, so a collection appears as many times as
+ *    the wallet holds pieces of it (0x2984 holds 71 ERC-1155 items across 56 contracts).
+ *    Scam classification is a property of the collection, not of each piece, so entries are
+ *    folded by contract address with `instanceCount` recording how many were seen. Leaving
+ *    them unfolded would report the same scam collection repeatedly and inflate every count.
+ *
+ * A failure on either standard propagates: reporting the ERC-721 half as if it were the whole
+ * NFT picture is the same silent-truncation bug the ERC-20 pagination fix was about.
+ */
+export async function fetchNftHoldings(address, options = {}) {
+  const collections = new Map();
+
+  for (const standard of NFT_STANDARDS) {
+    for (const item of await fetchHoldingsOfType(address, standard, options)) {
+      const key = item.address?.toLowerCase() ?? "";
+      const existing = collections.get(key);
+      if (existing) {
+        existing.instanceCount += 1;
+        continue;
+      }
+      const { balance, ...rest } = item;
+      collections.set(key, { ...rest, standard: item.standard || standard, instanceCount: 1 });
+    }
+  }
+
+  return [...collections.values()];
 }
