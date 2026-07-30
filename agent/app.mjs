@@ -2,7 +2,7 @@ import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { classifyToken } from "./lib/scamHeuristics.mjs";
-import { fetchTokenHoldings } from "./lib/blockscout.mjs";
+import { fetchTokenHoldings, fetchNftHoldings } from "./lib/blockscout.mjs";
 import { readExposureReport } from "./lib/exposure.mjs";
 import { buildAuditPaymentMiddleware, AGENT_WALLET, AUDIT_PRICE, AUDIT_NETWORK } from "./lib/x402Seller.mjs";
 import { issueNonce, verifySignIn, nonceStoreKind } from "./lib/siwb.mjs";
@@ -23,9 +23,40 @@ const MAX_LAG_SECONDS = 60;
 const holdingsCache = createTtlCache({ ttlMs: 60_000 });
 const cachedHoldings = () => holdingsCache.get(() => fetchTokenHoldings(WALLET));
 
+// Kept as its own cache entry rather than folded into the one above: the NFT walk is four more
+// upstream requests, and a failure on one side should not evict a good result on the other.
+const nftCache = createTtlCache({ ttlMs: 60_000 });
+const cachedNfts = () => nftCache.get(() => fetchNftHoldings(WALLET));
+
+/**
+ * Classify every holding, across all three token standards.
+ *
+ * Deliberately fails as a whole rather than reporting the ERC-20 half when the NFT walk is
+ * down. "Scanned 149 tokens, nothing new" reads as an all-clear, and a partial scan that looks
+ * complete is this agent's characteristic failure — it is how ERC-20 pagination hid a third of
+ * the holdings and how ERC-721/1155 went unscanned entirely.
+ */
+async function scanHoldings() {
+  const [tokens, nfts] = await Promise.all([cachedHoldings(), cachedNfts()]);
+  const all = [...tokens, ...nfts];
+  const classified = all.map((token) => ({ ...token, standard: token.standard || "ERC-20", ...classifyToken(token) }));
+
+  const scannedByStandard = {};
+  for (const item of classified) scannedByStandard[item.standard] = (scannedByStandard[item.standard] ?? 0) + 1;
+
+  return {
+    scannedTokens: classified.length,
+    scannedByStandard,
+    flagged: classified.filter((t) => t.suspicious),
+  };
+}
+
+const flaggedForReport = (flagged) =>
+  flagged.map(({ address, name, symbol, standard, reasons }) => ({ address, name, symbol, standard, reasons }));
+
 async function computeAudit() {
-  const [report, holdings] = await Promise.all([readExposureReport(), cachedHoldings()]);
-  const flagged = holdings.map((token) => ({ ...token, ...classifyToken(token) })).filter((t) => t.suspicious);
+  const [report, holdings] = await Promise.all([readExposureReport(), scanHoldings()]);
+  const { flagged } = holdings;
   const liveApprovals = report ? report.erc20Live.length + report.permit2Live.length : 0;
   return {
     wallet: WALLET,
@@ -38,9 +69,10 @@ async function computeAudit() {
       permit2Grants: report?.permit2Live ?? [],
     },
     scamAirdrops: {
-      scannedTokens: holdings.length,
+      scannedTokens: holdings.scannedTokens,
+      scannedByStandard: holdings.scannedByStandard,
       flaggedCount: flagged.length,
-      flagged: flagged.map(({ address, name, symbol, reasons }) => ({ address, name, symbol, reasons })),
+      flagged: flaggedForReport(flagged),
     },
     hygieneScore: Math.max(0, 100 - liveApprovals * 5 - flagged.length * 2),
   };
@@ -178,15 +210,13 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
   app.get("/drops", async (req, res) => {
     res.set("Cache-Control", "public, max-age=1800");
     try {
-      const holdings = await cachedHoldings();
-      const flagged = holdings
-        .map((token) => ({ ...token, ...classifyToken(token) }))
-        .filter((token) => token.suspicious);
+      const { scannedTokens, scannedByStandard, flagged } = await scanHoldings();
       res.json({
         wallet: WALLET,
-        scannedTokens: holdings.length,
+        scannedTokens,
+        scannedByStandard,
         flaggedCount: flagged.length,
-        flagged: flagged.map(({ address, name, symbol, reasons }) => ({ address, name, symbol, reasons })),
+        flagged: flaggedForReport(flagged),
       });
     } catch (err) {
       failure(res, { status: 502, code: "holdings_unavailable", error: err });
