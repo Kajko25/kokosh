@@ -25,7 +25,11 @@ const COURIER_PASSWORD_FILE = "/home/kajko/.foundry/keystores/courier.password";
 const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 const EAS = "0x4200000000000000000000000000000000000021";
 const SENTINEL_SCHEMA = "0x3741936182a94f6252130505509e2f0853cb231fcff5d92b41ed2b4397e93032";
-const STATE_PATH = new URL("../../docs/sentinel-state.json", import.meta.url);
+// Inside the agent package, not docs/, for the same reason the approval snapshot moved there:
+// agent/ is the Vercel project root, so anything above it is never deployed. /sentinel serves
+// this file, and the approval report spent weeks answering "not scanned yet" in production
+// because it lived one directory too high.
+const STATE_PATH = new URL("../data/sentinel-state.json", import.meta.url);
 const RPC = "https://mainnet.base.org";
 
 const client = createPublicClient({ chain: base, transport: http(RPC) });
@@ -37,7 +41,7 @@ const PERMIT2_APPROVAL = parseAbiItem(
 
 function loadState(latestBlock) {
   if (!existsSync(STATE_PATH)) {
-    throw new Error("no docs/sentinel-state.json — seed one with a baseline lastScannedBlock/knownFlaggedTokens first");
+    throw new Error("no agent/data/sentinel-state.json — seed one with a baseline lastScannedBlock/knownFlaggedTokens first");
   }
   return parseSentinelState(readFileSync(STATE_PATH, "utf8"), { latestBlock });
 }
@@ -239,7 +243,7 @@ async function main() {
   }
 
   if (DRY_RUN) {
-    console.log("DRY_RUN — not writing docs/sentinel-state.json");
+    console.log("DRY_RUN — not writing agent/data/sentinel-state.json");
   } else {
     writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
   }

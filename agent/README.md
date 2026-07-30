@@ -241,7 +241,7 @@ Adding a ticker to that map is the intended way to extend coverage.
 ## Sentinel
 
 `scripts/sentinel-run.mjs` is the autonomous half: an incremental re-scan that only speaks up
-when something is genuinely new. It reads `docs/sentinel-state.json`, scans from
+when something is genuinely new. It reads `data/sentinel-state.json`, scans from
 `lastScannedBlock + 1` to the current tip for new `Approval` events (ERC-20 and Permit2),
 checks which of the resulting pairs still have a live allowance, re-runs the scam classifier
 over current holdings, and diffs both against what it already knew.
