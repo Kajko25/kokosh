@@ -414,6 +414,30 @@ Not tracked by the audit but worth remembering: Stage 7's Solana return leg need
     crashed on the first attempt — `new Date(281474976710655 * 1000).toISOString()` throws
     `Invalid time value` — which is how the never-expiring grant announced itself.
 
+- **2026-07-30**: **Heartbeat: the cron now proves it ran, off this machine.** `/sentinel` made the
+  cycle observable from outside, but only from state baked into the deployed Vercel bundle — a
+  local cron run never touches that, so "did the cron fire?" remained unanswerable from anywhere
+  but the laptop, which is why the 2026-07-29 outage sat unnoticed for a day. Every cycle now
+  pushes one JSON to the **`sentinel-heartbeat`** branch (raw URL in the agent README) carrying
+  outcome, exit code, `lastRunAt`/`lastScannedBlock`/`knownFlaggedTokens`/`detectorFingerprint`,
+  and the `codeCommit` that produced it. **Absence is the signal**; cycles that do no work
+  (`stand-down`, `capped`) publish too, because a silent one is indistinguishable from a cron
+  that never fired.
+  - Built with git plumbing — `hash-object` → `mktree` → `commit-tree` → push the object — so it
+    never touches the working tree, the index or `HEAD`. It runs unattended and can land while
+    someone is mid-edit or mid-rebase on `main`; a script doing `git add` there could commit
+    unrelated work in progress. Publish failure is logged and never fatal.
+  - **Two bugs the real cron would have hit, both found only because the test ran under
+    `env -i PATH=/usr/bin:/bin` instead of a friendly shell.** First: the findings-count line
+    ended in a `grep`, and with `set -e` + `pipefail` a grep matching nothing exits 1 and killed
+    the wrapper silently *before* the heartbeat — the same trap this file documents around the
+    scan itself, three lines further down. Second: git's credential helper for github.com is
+    `!gh auth git-credential`, and cron knows where `gh` lives no better than it knew where
+    `node` was; the push failed with "could not read Username", which reads as an auth problem
+    rather than a PATH one.
+  - Does not fix the underlying limit: a sleeping machine still runs no cycle. It makes that
+    visible instead of silent.
+
 **Open for next session**:
 1. Stage 7 remainder and Stage 8 (docs, Builder Rewards, Ecosystem Directory PR, grant draft) not started. **The L1 withdrawal is confirmed `ready-to-finalize`** as of 2026-07-28 — check with `node scripts/l2l1-withdrawal.mjs status 0xa37a8365ef4e72e8ef83588620bbc7189a6924cfe0716c7f14356fcbd5688b7b` (the **L2** hash, not the L1 prove hash), then finalize via Ledger on L1 (gas there is ~$1–3, above the usual ask-first threshold). Solana return-leg prove+finalize still needs the manual `prove-message`/`relay-message` path; Base Ledgers still pending Coinbase.
 2. PR #148 (`base/skills`), docs#1730, and account-sdk#368 are all filed/updated and awaiting upstream review — no action needed until maintainers respond.
