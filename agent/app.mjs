@@ -13,10 +13,12 @@ import { failure } from "./lib/httpError.mjs";
 import { createRateLimiter, rateLimitMiddleware } from "./lib/rateLimit.mjs";
 import { createTtlCache } from "./lib/cache.mjs";
 import { computeHygieneScore } from "./lib/hygieneScore.mjs";
+import { readSentinelReport } from "./lib/sentinelReport.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const WALLET = "0x2984Bb4953cfCE2cEc957388BE686D6c38779234";
+const SENTINEL_STATE_PATH = fileURLToPath(new URL("./data/sentinel-state.json", import.meta.url));
 const MAX_LAG_SECONDS = 60;
 
 // One holdings fetch is three Blockscout requests since pagination was fixed, and both
@@ -222,6 +224,18 @@ export function makeApp({
     });
   });
 
+  // The daily cycle stopped once and nothing surfaced it: a stand-down and a dead cron look
+  // identical from outside. This makes the last run's age readable by a monitor.
+  app.get("/sentinel", async (req, res) => {
+    res.set("Cache-Control", "public, max-age=300");
+    const report = await readSentinelReport({ path: SENTINEL_STATE_PATH, now });
+    if (!report) {
+      res.status(202).json({ status: "no_sentinel_state", wallet: WALLET });
+      return;
+    }
+    res.json({ wallet: WALLET, ...report });
+  });
+
   app.get("/drops", async (req, res) => {
     res.set("Cache-Control", "public, max-age=1800");
     try {
@@ -298,6 +312,7 @@ export function agentCard({ auditMode = "paid" } = {}) {
       healthz: "/healthz",
       exposure: "/exposure",
       drops: "/drops",
+      sentinel: "/sentinel",
       audit: AUDIT_DESCRIPTIONS[auditMode] ?? AUDIT_DESCRIPTIONS.paid,
     },
     // Everything a paying agent needs to construct the payment without a preflight request,

@@ -236,3 +236,18 @@ test("an audit whose holdings scan fails is a 502, not a report with an empty sc
   assert.equal(body.error, "audit_unavailable");
   assert.equal("hygieneScore" in body, false);
 });
+
+test("sentinel reports the cycle's age and whether it is overdue", async () => {
+  const { status, body } = await get(makeApp({ holdings: stubHoldings() }), "/sentinel");
+
+  assert.equal(status, 200);
+  assert.equal(body.wallet, "0x2984Bb4953cfCE2cEc957388BE686D6c38779234");
+  assert.equal(typeof body.overdue, "boolean");
+  assert.ok("ageSeconds" in body);
+  assert.ok(body.detector.running, "the running detector fingerprint is always reported");
+  assert.ok(Array.isArray(body.alertedApprovals));
+});
+
+test("the agent card advertises the sentinel endpoint", () => {
+  assert.equal(agentCard().endpoints.sentinel, "/sentinel");
+});
