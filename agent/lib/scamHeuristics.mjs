@@ -74,7 +74,11 @@ export function classifyToken({ name = "", symbol = "", address = "" }) {
   if (BARE_DOMAIN_PATTERN.test(deSpacedName) || BARE_DOMAIN_PATTERN.test(deSpacedSymbol)) {
     reasons.push("name_or_symbol_contains_bare_domain");
   }
-  if (CLAIM_PATTERN.test(name)) {
+  // Read from the symbol as well as the name. Four ERC-20s here keep the whole lure in the
+  // symbol with a clean name — symbol "Visit moodeng.ink to claim" against name "MOODENG",
+  // and the same shape for getuni.one, degen.gifts and USD.AC. Their TLDs are outside the
+  // bare-domain list, so checking only the name left them entirely unseen.
+  if (CLAIM_PATTERN.test(name) || CLAIM_PATTERN.test(symbol)) {
     reasons.push("urgency_language");
   }
   if (REWARD_PATTERN.test(name) || REWARD_PATTERN.test(symbol)) {

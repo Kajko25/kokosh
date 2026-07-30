@@ -145,3 +145,19 @@ test("a dollar sign next to plain digits is not a cash amount", () => {
     assert.equal(classifyToken({ name, symbol }).reasons.includes("quotes_a_cash_amount"), false, name);
   }
 });
+
+test("urgency language in the symbol counts, even when the name looks clean", () => {
+  // Four real ERC-20 holdings put the lure in the symbol and leave the name as a plausible
+  // ticker. Their domains (.ink, .one, .gifts, USD.AC) are outside the bare-domain TLD list,
+  // so the symbol is the only place they can be caught.
+  for (const [symbol, name] of [
+    ["Visit moodeng.ink to claim", "MOODENG"],
+    ["Visit getuni.one to swap", "UNI"],
+    ["Airdrop: degen.gifts/?claim", "Degen"],
+    ["Claim on: USD.AC", "USDAC"],
+  ]) {
+    const result = classifyToken({ name, symbol, address: "0xdead" });
+    assert.equal(result.suspicious, true, symbol);
+    assert.ok(result.reasons.includes("urgency_language"), symbol);
+  }
+});
