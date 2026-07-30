@@ -345,6 +345,45 @@ Not tracked by the audit but worth remembering: Stage 7's Solana return leg need
     the sandbox's permission classifier, not by any error). Everything above is verified locally
     and against live Base/Blockscout, but the live agent is unchanged until that runs.
 
+- **2026-07-30**: **The approval snapshot went stale because refreshing it cost 50 minutes.**
+  `/exposure` was serving a two-day-old file and the paid `/audit` was deriving `hygieneScore`
+  from it, not because anything was broken but because the only refresh available was a walk from
+  block 0 — ~4,900 windows per event. An incremental mode now resumes from a recorded
+  `scannedToBlock`: **14 seconds** for 75,000 blocks on its first real run, against ~50 minutes.
+  - Correctness here has two halves, and the second is the one that is easy to miss. New
+    `Approval`/`Permit` events since the anchor catch grants made in the gap (an allowance only
+    goes non-zero via a call that emits something). But **every previously-live pair is re-read
+    regardless of events**, because `transferFrom` decrements a finite allowance and ERC-20
+    requires no event for it — a grant spent to zero leaves no log, so events alone would keep
+    reporting exposure that is already gone. That is the same class of error as the staleness
+    being fixed, pointing the other way.
+  - A 250-block overlap is re-scanned each run against shallow reorgs; the anchor is written only
+    after the allowance re-read succeeds, so a failed run cannot advance past blocks it never
+    processed; a missing anchor falls back to a full scan rather than guessing (0 silently becomes
+    the hour-long walk, the tip silently skips the wallet's history); an anchor ahead of the tip is
+    refused outright, the same failure `parseSentinelState` already refuses.
+  - **Found while building it: Permit2 grants made by signature emit `Permit`, not `Approval`,**
+    and only `Approval` was ever scanned — so a router taking a permit signature instead of an
+    on-chain approve was invisible to both modes. Checked before claiming a fix: **zero `Permit`
+    events for this wallet in the last ~237k blocks** (~2 months), so this is a hole closed, not a
+    miss corrected. Permit2 queries are also filtered to the Permit2 address now instead of
+    matching the event signature across every contract.
+  - The first run needed its anchor seeded by hand, since no report had ever recorded one.
+    Derived rather than invented: the 2026-07-28 full scan walked 4,925 chunks of 10,000 blocks,
+    so it reached roughly 49,250,000, and **49,240,000** was chosen deliberately below that — an
+    error in that direction costs redundant scanning, the other direction leaves an unscanned gap.
+  - `/exposure` now reports `scannedToBlock` and `scanMode` alongside the age. Age on its own is
+    not a freshness signal for this endpoint: it moves whenever the file is rewritten, so it
+    cannot tell a real refresh from a fresh **deploy** of an old snapshot. The anchor can be
+    compared against the chain tip.
+  - Historical caveat kept in view: the pre-2026-07-30 history was never scanned for `Permit`
+    events, since the full scan that established the anchor predates that event being included.
+    Closing that properly means one `--full` run (~50 min, now 3 events); the incremental path
+    covers everything from the anchor forward.
+  - 13 tests; suite 201 → 214. Verified live: 8 chunks, no new events, the one known live pair
+    (WETH → Aave v3 Pool, ~$0.04) carried forward and re-read as still live, `/exposure` back to
+    `stale: false`.
+
 **Open for next session**:
 1. Stage 7 remainder and Stage 8 (docs, Builder Rewards, Ecosystem Directory PR, grant draft) not started. **The L1 withdrawal is confirmed `ready-to-finalize`** as of 2026-07-28 — check with `node scripts/l2l1-withdrawal.mjs status 0xa37a8365ef4e72e8ef83588620bbc7189a6924cfe0716c7f14356fcbd5688b7b` (the **L2** hash, not the L1 prove hash), then finalize via Ledger on L1 (gas there is ~$1–3, above the usual ask-first threshold). Solana return-leg prove+finalize still needs the manual `prove-message`/`relay-message` path; Base Ledgers still pending Coinbase.
 2. PR #148 (`base/skills`), docs#1730, and account-sdk#368 are all filed/updated and awaiting upstream review — no action needed until maintainers respond.
