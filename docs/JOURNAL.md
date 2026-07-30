@@ -234,6 +234,117 @@ Courier burner (operational relay wallet): `0xf2035170A3B5106DBD4c98853D3C9E52c7
 
 Not tracked by the audit but worth remembering: Stage 7's Solana return leg needs **manual** `prove-message`/`relay-message` (per 0x6D48's own experience — ~65min root wait, unlike the automatic relay on the outbound leg with `--pay-for-relay`).
 
+## Teaching the sentinel to see two thirds of the wallet
+
+- **2026-07-30**: **Kokosh had never looked at an NFT.** The scam scanner queried
+  `type=ERC-20` only, and 0x2984 holds **125 NFT collections** on top of its 149 ERC-20s — 69
+  ERC-721 and 56 ERC-1155. The ERC-1155 side turned out to be where the crudest lures live:
+  `PYUSD Airdrop PASS`, `ZKSYNC-NFT - claim : zk-reward.top/claim`, `5O OOO USD FOR FREE`,
+  `[ #181 ] Scan the QR to get a reward`. An airdrop sentinel blind to two of the three token
+  standards was missing the group it would find easiest. **Detections went 32 → 63 of 274
+  collections.**
+  - The reader needed real work, not a parameter: NFTs sit behind two `type` filters, and the
+    endpoint returns one row per `token_id`, so a collection recurs once per piece held (71 rows
+    over 56 contracts here). Entries fold per contract with `instanceCount`; the per-`token_id`
+    `value` is dropped rather than reported as a collection balance.
+  - **Blockscout's own `reputation` field is useless here** — it reads `"ok"` for all 274
+    contracts, including `t.ly/nftjup - 340.000$ JUP Win`. Checked before building anything on
+    it; recording the negative result so nobody tries again.
+  - Built `scripts/calibrate-heuristics.mjs` first, because the rules are pattern guesses about
+    adversarial text and both of the detector's known bugs (the impersonation check that could
+    never fire, ERC-20-only scanning) survived by being argued in the abstract while 274 real
+    names sat there for free. Every rule below was accepted or rejected against that output.
+
+- **2026-07-30**: **Six new heuristics, each from a name actually in the wallet.**
+  - **Spaced-out dots.** `DAONEXT. COM`, `[ 82 ] DAOEVENT . COM`, and `t .me/s/sol_shiba` with
+    the space *inside* the host. Both DAOEVENT spellings exist, which reads as deliberate regex
+    evasion. Domain rules now close up dot spacing first; `com`/`net` joined the TLD list with
+    no false positive across 274.
+  - **`finance` deliberately rejected** as a TLD: it would flag `Rai.Finance`, a legitimate
+    holding. The scam needing it (`cakesv4.finance`) is caught by ticker impersonation instead —
+    precise mechanism over broad one.
+  - **Reward language** (`REWARD`/`free`/`earnings`/…): five collections carry no domain, no
+    urgency verb and no homoglyph, so nothing saw `HYPERLIQUID REWARD` (two different contracts)
+    or `COIN Earnings`.
+  - **Cash amounts**, but only grouped thousands or an explicit currency word. The obvious
+    version (`$` near digits) immediately flagged `EIP-4844 is Based`, symbol `$4844`, a real
+    holding — caught by the harness, not by review. That false positive is why the rule has the
+    shape it does.
+  - **QR lures** (`SCAN ME`, `Scan the QR…`), which move the destination into an image and
+    defeat every text rule, and **bare pressure** (`Don't miss this chance!`, two contracts).
+  - **`urgency_language` was reading only the name.** Four ERC-20s keep the whole lure in the
+    *symbol* with a clean name — `symbol: "Visit moodeng.ink to claim"`, `name: "MOODENG"`, same
+    shape for getuni.one, degen.gifts, USD.AC — and their TLDs are outside the domain list, so
+    the symbol was the only field that could catch them. Every other rule already checked both.
+  - **Ticker map 4 → 15 entries**, each address verified on Base before adding (`symbol()`,
+    `name()`, holder count 112k–1.2M) because a wrong entry flags the *genuine* token as fake.
+    Six ERC-721 collections here use the CAKE symbol. One existing test needed its data
+    corrected rather than its expectation: it asserted `CBBTC`/`USDBC` clean while passing a
+    placeholder address, which is now correctly an impersonation.
+
+- **2026-07-30**: **`hygieneScore` was pinned to 0 and nobody would have noticed.** 63 flagged
+  collections at 2 points each is -126, so the number `/audit` sells had stopped distinguishing a
+  wallet with one $0.04 allowance from one with ten unlimited approvals to strangers. Rebuilt
+  around **agency**: airdrops are received, not chosen (nobody can refuse an incoming transfer),
+  so they cost a capped 10 points and mean "this wallet is a target"; allowances are decisions,
+  and unlimited (25) is not the same decision as finite (8) or an expiring Permit2 grant (5).
+  "Unlimited" is a `2^128` threshold, not equality with `uint256` max, since routers spell it
+  several ways; an unparseable amount counts as unlimited. **No snapshot now yields `null`, not
+  100** — scoring full marks for having looked at nothing is this agent's signature failure.
+  Versioned with a breakdown so a paying caller can tell "my wallet changed" from "the formula
+  changed". Live score: **82** (1 finite approval −8, 63 collections −10).
+
+- **2026-07-30**: **The re-baseline rule became a mechanism instead of a habit.** The contract is
+  *EAS attestations record changes in the wallet; git records changes in the detector* — and it
+  had been broken twice (the pagination fix, the bare-domain rule), caught both times by a human
+  noticing and re-seeding by hand. Today's change would have been the third and worst: 63 flagged
+  where the baseline knew 32, most held for months, attested as appearing today — a false date
+  on-chain, permanently, signed by the agent. `RULE_IDS` + `detectorFingerprint()` hash the
+  ruleset (content-derived, so a rule added without bumping anything still changes the digest;
+  a test asserts every emitted reason is listed), the digest rides in the state file, and
+  `lib/tokenFindings.mjs` re-baselines when it disagrees. **Subtlety worth keeping:** a partial
+  holdings scan can't invent a finding, but re-baselining on a short list records fewer tokens as
+  known, so the missing ones return next cycle looking new — hence both walks or neither.
+
+- **2026-07-30**: **`/sentinel` earned its place on its first request.** The daily cycle had
+  stopped again, and the log said why in plain words: `node: command not found`, exit 127, on the
+  2026-07-29 cycle. Last session's change to log `sentinel-run FAILED` explicitly *did* fire and
+  *did* name the cause — nobody read the log. cron runs with a bare PATH and no nvm shim; the
+  wrapper now resolves `node` from PATH or the newest nvm install and exits 127 with the PATH
+  printed. Verified under `env -i PATH=/usr/bin:/bin`, the exact condition that broke it.
+  - The new endpoint reports `lastRunAt`, `ageSeconds`, `overdue` (against a 26h interval, since
+    the cron jitters 45 min), `lastScannedBlock`, `knownFlaggedTokens`, the `alertedApprovals`
+    still needing a human with the Ledger, and whether the baseline's ruleset matches the running
+    one — so "0 findings" can be read correctly. A missing or unparseable `lastRunAt` counts as
+    overdue: the reassuring answer is the wrong default here.
+  - **The state file was in `docs/`**, i.e. outside `agent/` — the Vercel project root — which is
+    exactly why `/exposure` served "not scanned yet" for weeks. Moved to `agent/data/` before
+    serving it.
+  - First live cycle since the outage, run through the fixed wrapper: 8 windows, 149 ERC-20 + 125
+    NFT collections, re-baselined the 63, **attested nothing**, state 32 → 63 known and
+    fingerprint `fb9e99a705d8` recorded. `/sentinel` now answers `overdue: false`.
+
+- **2026-07-30**: **CSP shipped in report-only mode**, resolving a gap that was correctly
+  identified and then left open indefinitely. Enforcing needs a browser to verify against a real
+  signing flow and there is none here; `Content-Security-Policy-Report-Only` cannot block, so it
+  cannot break sign-in, and `POST /csp-report` logs what real use violates — converting an
+  unverifiable guess into a measurement. `object-src`/`base-uri`/`form-action`/`frame-ancestors`
+  are already `'none'`; `connect-src`/`frame-src` are openly placeholders, because the Coinbase
+  endpoints the SDK reaches are precisely what cannot be enumerated from here. Set in
+  `vercel.json` too — the CDN serves `public/` directly, the same split that once left the
+  security headers protecting the JSON API and not the sign-in pages.
+
+- **2026-07-30**: **Endpoint tests exist at all now.** `/drops` and `/audit` carry the product,
+  one of them paid, and had zero tests because the only route to the holdings was a module-level
+  fetch against live Blockscout. `makeApp` takes the holdings pair now (defaulting to the live
+  cached walks), and the two tests that matter assert both endpoints return **502 with no partial
+  data** when a walk is down. Suite **140 → 201**.
+  - **NOT YET DEPLOYED.** Production still runs the old code — `/sentinel` 404s and `/drops`
+    reports 149 scanned / 32 flagged. There is no git auto-deploy on this project; it needs
+    `cd agent && npx vercel@latest --prod --yes`, which this session could not run (blocked by
+    the sandbox's permission classifier, not by any error). Everything above is verified locally
+    and against live Base/Blockscout, but the live agent is unchanged until that runs.
+
 **Open for next session**:
 1. Stage 7 remainder and Stage 8 (docs, Builder Rewards, Ecosystem Directory PR, grant draft) not started. **The L1 withdrawal is confirmed `ready-to-finalize`** as of 2026-07-28 — check with `node scripts/l2l1-withdrawal.mjs status 0xa37a8365ef4e72e8ef83588620bbc7189a6924cfe0716c7f14356fcbd5688b7b` (the **L2** hash, not the L1 prove hash), then finalize via Ledger on L1 (gas there is ~$1–3, above the usual ask-first threshold). Solana return-leg prove+finalize still needs the manual `prove-message`/`relay-message` path; Base Ledgers still pending Coinbase.
 2. PR #148 (`base/skills`), docs#1730, and account-sdk#368 are all filed/updated and awaiting upstream review — no action needed until maintainers respond.
