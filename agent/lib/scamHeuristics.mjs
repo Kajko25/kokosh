@@ -34,6 +34,17 @@ const CLAIM_PATTERN = /\bclaim\b|\buntil\b|\bexpires?\b|\bvisit\b|\bairdrop\b/i;
 // collections.
 const REWARD_PATTERN = /\breward(s|ed)?\b|\bfree\b|\bprize\b|\bwin(ner|nings)?\b|\bbonus\b|\bgiveaway\b|\bearnings\b|\bredeem\b/i;
 
+// A quoted sum of money: "# UP $5,000 TO $50,000", "340.000$ JUP Win", "135.000$ Win".
+// The digits must be *grouped* in thousands, or carry a currency word, rather than merely
+// following a dollar sign. The loose version — any $ next to any digits — flagged
+// "EIP-4844 is Based" (symbol "$4844"), a legitimate collection in this wallet, and a
+// detector that cries wolf on real holdings is one its owner stops reading.
+const GROUPED_THOUSANDS = String.raw`\d{1,3}(?:[.,\s]\d{3})+`;
+const MONEY_PATTERN = new RegExp(
+  String.raw`(?:\$|\busd[tc]?\b)\s?${GROUPED_THOUSANDS}|${GROUPED_THOUSANDS}\s?(?:\$|\busd[tc]?\b)`,
+  "i"
+);
+
 // Common Latin-lookalike confusable ranges (Cyrillic, Greek) that show up in ticker spoofing.
 const HOMOGLYPH_PATTERN = /[Ѐ-ӿͰ-Ͽ]/;
 
@@ -68,6 +79,9 @@ export function classifyToken({ name = "", symbol = "", address = "" }) {
   }
   if (REWARD_PATTERN.test(name) || REWARD_PATTERN.test(symbol)) {
     reasons.push("reward_language");
+  }
+  if (MONEY_PATTERN.test(name) || MONEY_PATTERN.test(symbol)) {
+    reasons.push("quotes_a_cash_amount");
   }
   if (HOMOGLYPH_PATTERN.test(name) || HOMOGLYPH_PATTERN.test(symbol)) {
     reasons.push("non_latin_homoglyph");

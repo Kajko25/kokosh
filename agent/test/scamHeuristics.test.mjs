@@ -130,3 +130,18 @@ test("reward words are word-bounded, not substring matches", () => {
     assert.equal(classifyToken({ name, symbol: "X" }).suspicious, false, name);
   }
 });
+
+test("flags a quoted cash amount", () => {
+  for (const name of ["# UP $5,000 TO $50,000", "t.ly/nftjup - 340.000$ JUP Win", "1.000 USDC bonus"]) {
+    assert.ok(classifyToken({ name, symbol: "" }).reasons.includes("quotes_a_cash_amount"), name);
+  }
+});
+
+test("a dollar sign next to plain digits is not a cash amount", () => {
+  // "EIP-4844 is Based" with symbol "$4844" is a real holding, and the looser version of this
+  // rule flagged it. Grouped thousands or a currency word are what distinguish a sum of money
+  // from an identifier that happens to be numeric.
+  for (const [name, symbol] of [["EIP-4844 is Based", "$4844"], ["Multiverse: Earth #420", ""], ["Cubes 70", "3D"], ["DuneCon2024 Data City", ""]]) {
+    assert.equal(classifyToken({ name, symbol }).reasons.includes("quotes_a_cash_amount"), false, name);
+  }
+});
