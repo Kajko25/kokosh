@@ -152,11 +152,12 @@ agent keeps having.
 The combined report: exposure + scam scan + a versioned `hygieneScore` with its own breakdown.
 
 ```
-hygieneScore = max(0, 100 - approvalPenalty - min(flagged, 10))     # scoreVersion 2
+hygieneScore = max(0, 100 - approvalPenalty - min(flagged, 10))     # scoreVersion 3
 
 approvalPenalty = 25 * unlimited ERC-20 approvals    # open claim on the whole balance
                 +  8 * finite ERC-20 approvals       # bounded by construction
-                +  5 * live Permit2 grants           # expire by themselves
+                +  5 * Permit2 grants that expire    # time ends them on its own
+                +  8 * Permit2 grants that do not    # uint48 max = "never"; only amount 0 ends it
 ```
 
 Version 1 was `100 - liveApprovals*5 - flaggedTokens*2`, and it broke the moment the scan
@@ -166,6 +167,11 @@ to strangers. Both weights above follow from **agency**. Scam airdrops are recei
 — nobody can refuse an incoming transfer — so they are capped at 10 points and read as "this
 wallet is a target", not "its owner is careless". Allowances are decisions, and an unlimited one
 is not the same decision as a bounded one.
+
+The Permit2 split is not hypothetical: this wallet granted WETH to Morpho's `GeneralAdapter1`
+with `expiration` = `281474976710655` (uint48 max), which nothing but the amount reaching zero
+was ever going to end. Discounting that as "it expires by itself" was wrong, so it is priced as
+the bare approval it behaves as.
 
 "Unlimited" is a threshold (`2^128`), not an equality test against `uint256` max, because
 routers and wallets spell it several ways; an unparseable amount counts as unlimited, since a

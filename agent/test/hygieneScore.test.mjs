@@ -81,3 +81,26 @@ test("the score floors at zero rather than going negative", () => {
   const many = Array.from({ length: 20 }, () => approval(MAX_UINT256));
   assert.equal(computeHygieneScore({ report: report(many), flaggedCount: 100 }).hygieneScore, 0);
 });
+
+test("a Permit2 grant that never expires is not scored as though it does", () => {
+  // This wallet granted exactly that: WETH to Morpho's GeneralAdapter1, expiration
+  // 281474976710655 -- uint48 max, Permit2's "never". The discount for Permit2 grants was
+  // justified by "they expire by themselves", which is false for this shape.
+  const expiring = computeHygieneScore({
+    report: report([], [{ token: "0xT", spender: "0xS", amount: "1", expiration: 1_800_000_000 }]),
+  });
+  const forever = computeHygieneScore({
+    report: report([], [{ token: "0xT", spender: "0xS", amount: "1", expiration: 281474976710655 }]),
+  });
+
+  assert.equal(expiring.hygieneScore, 100 - WEIGHTS.permit2Grant);
+  assert.equal(forever.hygieneScore, 100 - WEIGHTS.permit2GrantNoExpiry);
+  assert.ok(forever.hygieneScore < expiring.hygieneScore);
+  assert.equal(forever.scoreBreakdown.permit2GrantsWithoutExpiry, 1);
+  assert.equal(expiring.scoreBreakdown.permit2GrantsWithoutExpiry, 0);
+});
+
+test("an unexpiring Permit2 grant costs the same as a bare finite approval", () => {
+  // It behaves as one: only the amount reaching zero ends it.
+  assert.equal(WEIGHTS.permit2GrantNoExpiry, WEIGHTS.finiteApproval);
+});

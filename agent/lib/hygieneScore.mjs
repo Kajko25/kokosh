@@ -19,7 +19,10 @@
 // needs to be able to tell "my wallet changed" from "the formula changed", and this agent has
 // already had to re-seed a baseline once for exactly that confusion.
 
-export const SCORE_VERSION = 2;
+// 3: unexpiring Permit2 grants no longer get the expiring-grant discount. Bumped because the
+// weights changed — the whole point of this field is that a paying caller can tell a formula
+// change from a wallet change, and v2 has already been sold.
+export const SCORE_VERSION = 3;
 
 // An allowance this large is unlimited in every practical sense: uint256 max is the common
 // spelling, but so are 2^255, 2^160-1 and other "big enough that it will never be reached"
@@ -27,12 +30,23 @@ export const SCORE_VERSION = 2;
 // balance rather than an equality test on one magic constant.
 export const UNLIMITED_THRESHOLD = 2n ** 128n;
 
+// Permit2 stores expiry in a uint48; its maximum is the protocol's "never expires". Treated as a
+// threshold rather than an equality test for the same reason as the amount above: near-max
+// values are the same promise in practice (uint48 max is the year 8,919,586).
+export const NEVER_EXPIRES_THRESHOLD = 2 ** 47;
+
 export const WEIGHTS = {
   unlimitedApproval: 25,
   finiteApproval: 8,
-  // Permit2 grants carry an expiry, so an abandoned one stops mattering by itself. That is a
-  // real structural difference from a bare ERC-20 approval, which lives until revoked.
+  // A Permit2 grant that genuinely expires stops mattering by itself, which is a real
+  // structural difference from a bare ERC-20 approval that lives until revoked.
   permit2Grant: 5,
+  // ...but only if it expires. Permit2 accepts uint48 max as "never", and this wallet has
+  // granted exactly that: WETH to Morpho's GeneralAdapter1 on 2025-10-01, expiration
+  // 281474976710655. Nothing but the amount reaching zero was ever going to end it. Scoring
+  // that at the expiring-grant discount was wrong, so an unexpiring grant is priced like the
+  // bare approval it behaves as.
+  permit2GrantNoExpiry: 8,
   perFlaggedToken: 1,
   // Airdrop noise is capped: past a handful of pieces of spam it says nothing further about
   // how this wallet is looked after.
@@ -62,8 +76,14 @@ export function computeHygieneScore({ report, flaggedCount = 0 } = {}) {
   const unlimited = erc20.filter((a) => isUnlimited(a.amount)).length;
   const finite = erc20.length - unlimited;
 
+  const permit2NoExpiry = permit2.filter((g) => Number(g.expiration ?? 0) >= NEVER_EXPIRES_THRESHOLD).length;
+  const permit2Expiring = permit2.length - permit2NoExpiry;
+
   const approvalPenalty =
-    unlimited * WEIGHTS.unlimitedApproval + finite * WEIGHTS.finiteApproval + permit2.length * WEIGHTS.permit2Grant;
+    unlimited * WEIGHTS.unlimitedApproval +
+    finite * WEIGHTS.finiteApproval +
+    permit2Expiring * WEIGHTS.permit2Grant +
+    permit2NoExpiry * WEIGHTS.permit2GrantNoExpiry;
   const airdropPenalty = Math.min(flaggedCount * WEIGHTS.perFlaggedToken, WEIGHTS.flaggedTokenCap);
 
   return {
@@ -78,6 +98,7 @@ export function computeHygieneScore({ report, flaggedCount = 0 } = {}) {
       unlimitedApprovals: report ? unlimited : null,
       finiteApprovals: report ? finite : null,
       permit2Grants: report ? permit2.length : null,
+      permit2GrantsWithoutExpiry: report ? permit2NoExpiry : null,
       flaggedCollections: flaggedCount,
       approvalPenalty: report ? approvalPenalty : null,
       airdropPenalty,

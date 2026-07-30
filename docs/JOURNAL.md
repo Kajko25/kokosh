@@ -389,6 +389,31 @@ Not tracked by the audit but worth remembering: Stage 7's Solana return leg need
     (WETH → Aave v3 Pool, ~$0.04) carried forward and re-read as still live, `/exposure` back to
     `stale: false`.
 
+- **2026-07-30**: **All six Permit2 `Permit` grants enumerated — and the spender explains why the
+  old scanner was blind.** Every one of them went to **Uniswap's UniversalRouter**
+  (`0x3fC91A3a…7FAD`, verified) or a comparable router-style contract, and UniversalRouter takes
+  Permit2 *signatures* rather than on-chain approvals. So the path this wallet used most was
+  precisely the one `Approval`-only scanning could not see.
+  - 2024-05-05 PRO, 2024-05-06 SPEC, 2024-05-13 DAI, 2024-05-13 USDbC — all to UniversalRouter,
+    all `2^160-1` (**unlimited amount**), each capped only by a 30-day expiry. That expiry is the
+    sole reason none are live today.
+  - 2025-10-01 **WETH → `0xb98c948C…746A` = Morpho `GeneralAdapter1`**, 2.0627 WETH, `expiration`
+    **281474976710655 = uint48 max, i.e. never**. Current state read on-chain: `amount 0`,
+    expiration still uint48 max, nonce 1 — killed by the amount reaching zero, never by time.
+  - 2026-03-10 ysUSDC → `0x218A2e4F…44E0` (**unverified contract**), 984.8 USDC-ish, expired the
+    same day; now `amount 0` too.
+  - **This falsified a claim made earlier the same day.** `hygieneScore` v2 discounted Permit2
+    grants (5 points vs 8 for a bare finite approval) on the reasoning that "they expire by
+    themselves". A grant with `expiration = uint48 max` does not, and this wallet has granted
+    exactly that. Fixed: unexpiring grants are priced like the bare approval they behave as (8),
+    `permit2GrantsWithoutExpiry` is reported in the breakdown, and **SCORE_VERSION is bumped to
+    3** — v2 has already been sold over x402, and that field exists so a paying caller can tell a
+    formula change from a wallet change.
+  - Method note: the enumeration ran as a throwaway script in the scratchpad, not a repo script,
+    since the scanner counts these events but deliberately keeps only (token, spender) pairs. It
+    crashed on the first attempt — `new Date(281474976710655 * 1000).toISOString()` throws
+    `Invalid time value` — which is how the never-expiring grant announced itself.
+
 **Open for next session**:
 1. Stage 7 remainder and Stage 8 (docs, Builder Rewards, Ecosystem Directory PR, grant draft) not started. **The L1 withdrawal is confirmed `ready-to-finalize`** as of 2026-07-28 — check with `node scripts/l2l1-withdrawal.mjs status 0xa37a8365ef4e72e8ef83588620bbc7189a6924cfe0716c7f14356fcbd5688b7b` (the **L2** hash, not the L1 prove hash), then finalize via Ledger on L1 (gas there is ~$1–3, above the usual ask-first threshold). Solana return-leg prove+finalize still needs the manual `prove-message`/`relay-message` path; Base Ledgers still pending Coinbase.
 2. PR #148 (`base/skills`), docs#1730, and account-sdk#368 are all filed/updated and awaiting upstream review — no action needed until maintainers respond.
