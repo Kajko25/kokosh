@@ -26,6 +26,14 @@ const DOT_SPACING = /\s*\.\s*/g;
 const closeDotSpacing = (text) => text.replace(DOT_SPACING, ".");
 const CLAIM_PATTERN = /\bclaim\b|\buntil\b|\bexpires?\b|\bvisit\b|\bairdrop\b/i;
 
+// The other half of the lure: not "do this now" but "you have won something". Drawn from
+// collections in this wallet that carry no domain and no urgency verb, so nothing else here
+// sees them — "HYPERLIQUID REWARD" (twice, different contracts), "COIN Earnings",
+// "5O OOO USD FOR FREE", "Scan the QR to get a reward". Word-bounded so ordinary names
+// containing these as substrings are untouched; no false positive across this wallet's 274
+// collections.
+const REWARD_PATTERN = /\breward(s|ed)?\b|\bfree\b|\bprize\b|\bwin(ner|nings)?\b|\bbonus\b|\bgiveaway\b|\bearnings\b|\bredeem\b/i;
+
 // Common Latin-lookalike confusable ranges (Cyrillic, Greek) that show up in ticker spoofing.
 const HOMOGLYPH_PATTERN = /[Ѐ-ӿͰ-Ͽ]/;
 
@@ -57,6 +65,9 @@ export function classifyToken({ name = "", symbol = "", address = "" }) {
   }
   if (CLAIM_PATTERN.test(name)) {
     reasons.push("urgency_language");
+  }
+  if (REWARD_PATTERN.test(name) || REWARD_PATTERN.test(symbol)) {
+    reasons.push("reward_language");
   }
   if (HOMOGLYPH_PATTERN.test(name) || HOMOGLYPH_PATTERN.test(symbol)) {
     reasons.push("non_latin_homoglyph");

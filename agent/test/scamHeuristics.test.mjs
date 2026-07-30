@@ -107,3 +107,26 @@ test("de-spacing does not turn an ordinary abbreviation into a domain", () => {
   const result = classifyToken({ name: "U. S. ZORA RESERVE", symbol: "USZR" });
   assert.equal(result.suspicious, false);
 });
+
+test("flags reward and prize language with no domain or urgency verb attached", () => {
+  // All verbatim holdings that nothing else in this module sees: no URL, no "claim", no
+  // homoglyph. Two separate contracts are both named "HYPERLIQUID REWARD".
+  for (const name of ["HYPERLIQUID REWARD", "COIN Earnings", "5O OOO USD FOR FREE", "[ #181 ] Scan the QR to get a reward"]) {
+    const result = classifyToken({ name, symbol: "" });
+    assert.equal(result.suspicious, true, name);
+    assert.ok(result.reasons.includes("reward_language"), name);
+  }
+});
+
+test("reward language is read from the symbol too", () => {
+  const result = classifyToken({ name: "", symbol: "Hype REWARD" });
+  assert.ok(result.reasons.includes("reward_language"));
+});
+
+test("reward words are word-bounded, not substring matches", () => {
+  // "Freedom" contains "free", "Winter" contains "win", "Rewarding" is not a holding here but
+  // the boundary is what keeps names like these out of the report.
+  for (const name of ["Freedom Pass", "Winter Collection", "Basenames"]) {
+    assert.equal(classifyToken({ name, symbol: "X" }).suspicious, false, name);
+  }
+});
