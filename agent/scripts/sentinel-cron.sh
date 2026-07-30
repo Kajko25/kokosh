@@ -5,6 +5,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+# cron runs with a bare PATH that has no nvm shim, so a plain `node` is not found — the
+# 2026-07-29 cycle died with exit 127 after reaching the scan. Resolved explicitly here, and the
+# failure is loud rather than a "command not found" buried in a log nobody reads.
+if command -v node >/dev/null 2>&1; then
+  NODE_BIN="$(command -v node)"
+else
+  # Newest installed nvm version, chosen by sort -V rather than glob order.
+  NODE_BIN="$(ls -d "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | sort -V | tail -1)"
+fi
+if [ -z "${NODE_BIN:-}" ] || [ ! -x "$NODE_BIN" ]; then
+  echo "$(date -u -Iseconds) sentinel-run FAILED — no usable node binary (PATH=$PATH)"
+  exit 127
+fi
+
 STATE_DIR="docs"
 ACTIONS_LOG="$STATE_DIR/sentinel-actions-today.json"
 MAX_ACTIONS_PER_DAY="${MAX_ACTIONS_PER_DAY:-2}"
@@ -45,7 +59,7 @@ echo "$(date -u -Iseconds) jitter complete, starting scan"
 # captured output ever reached the log — which is exactly how a hard eth_getLogs failure
 # stayed invisible for days, looking identical to a clean silent run. Capture the status.
 set +e
-output="$(cd agent && node scripts/sentinel-run.mjs 2>&1)"
+output="$(cd agent && "$NODE_BIN" scripts/sentinel-run.mjs 2>&1)"
 rc=$?
 set -e
 echo "$output"
