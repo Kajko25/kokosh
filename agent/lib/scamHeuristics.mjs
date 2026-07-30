@@ -10,7 +10,20 @@ const URL_PATTERN = /(https?:\/\/|www\.)[a-z0-9.-]+\.[a-z]{2,}/i;
 // https:// or www. Matching any dotted word would flag legitimate names ("Rai.Finance",
 // "U. S. ZORA RESERVE"), so this is deliberately restricted to the TLDs actually used for
 // this kind of lure: link shorteners, messengers, and cheap generic domains.
-const BARE_DOMAIN_PATTERN = /\b[a-z0-9][a-z0-9-]*\.(io|me|ly|cc|xyz|top|link|site|app|gg|to|club|online|shop|vip|win)\b/i;
+//
+// `com` and `net` are in the list; `finance` deliberately is not. Real holdings here include
+// "Rai.Finance", a legitimate token, and the one scam that needs that TLD ("cakesv4.finance")
+// is caught by the ticker-impersonation rule below instead — a precise mechanism beats a broad
+// one that costs a false positive.
+const BARE_DOMAIN_PATTERN = /\b[a-z0-9][a-z0-9-]*\.(io|me|ly|cc|xyz|top|link|site|app|gg|to|club|online|shop|vip|win|com|net)\b/i;
+
+// Some of these names space out the dot to slip past a domain regex: "DAONEXT. COM",
+// "DAOEVENT . COM", and "t .me/s/sol_shiba" with the space inside the host. A human reading
+// the name in a wallet UI still sees a domain, which is the whole point of the trick, so the
+// spacing is closed up before the domain rules run. Five collections in this wallet are only
+// detectable this way.
+const DOT_SPACING = /\s*\.\s*/g;
+const closeDotSpacing = (text) => text.replace(DOT_SPACING, ".");
 const CLAIM_PATTERN = /\bclaim\b|\buntil\b|\bexpires?\b|\bvisit\b|\bairdrop\b/i;
 
 // Common Latin-lookalike confusable ranges (Cyrillic, Greek) that show up in ticker spoofing.
@@ -32,10 +45,14 @@ const KNOWN_TICKER_ADDRESSES = {
 export function classifyToken({ name = "", symbol = "", address = "" }) {
   const reasons = [];
 
-  if (URL_PATTERN.test(name) || URL_PATTERN.test(symbol)) {
+  // Domain rules see the de-spaced text; every other rule sees the name as written.
+  const deSpacedName = closeDotSpacing(name);
+  const deSpacedSymbol = closeDotSpacing(symbol);
+
+  if (URL_PATTERN.test(deSpacedName) || URL_PATTERN.test(deSpacedSymbol)) {
     reasons.push("name_or_symbol_contains_url");
   }
-  if (BARE_DOMAIN_PATTERN.test(name) || BARE_DOMAIN_PATTERN.test(symbol)) {
+  if (BARE_DOMAIN_PATTERN.test(deSpacedName) || BARE_DOMAIN_PATTERN.test(deSpacedSymbol)) {
     reasons.push("name_or_symbol_contains_bare_domain");
   }
   if (CLAIM_PATTERN.test(name)) {

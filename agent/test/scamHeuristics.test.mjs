@@ -75,3 +75,35 @@ test("a full URL still reports the url reason, not only the bare-domain one", ()
   });
   assert.ok(reasons.includes("name_or_symbol_contains_url"));
 });
+
+test("a domain with the dot spaced out is still a domain", () => {
+  // Verbatim from this wallet's ERC-1155 holdings. Both spellings appear, which is what
+  // makes it look like deliberate regex evasion rather than a typo.
+  for (const name of ["! [#] DAONEXT. COM", "[ 82 ] DAOEVENT . COM"]) {
+    const result = classifyToken({ name, symbol: "." });
+    assert.equal(result.suspicious, true, name);
+    assert.ok(result.reasons.includes("name_or_symbol_contains_bare_domain"), name);
+  }
+});
+
+test("a space inside the host does not hide it either", () => {
+  const result = classifyToken({ name: "REWARD 🎁🎁🎁 Visit: t .me/s/sol_shiba", symbol: "REWARD" });
+  assert.ok(result.reasons.includes("name_or_symbol_contains_bare_domain"));
+});
+
+test(".com and .net count as domains", () => {
+  assert.ok(classifyToken({ name: "! Airdapp.net", symbol: "AIRDAPP" }).reasons.includes("name_or_symbol_contains_bare_domain"));
+});
+
+test("a legitimate name ending in a non-listed TLD word is left alone", () => {
+  // Rai.Finance is a real holding in this wallet, which is why `finance` is not in the TLD
+  // list: adding it would trade one detection for one false positive.
+  const result = classifyToken({ name: "Rai.Finance", symbol: "RAI", address: "0x1234" });
+  assert.equal(result.suspicious, false);
+});
+
+test("de-spacing does not turn an ordinary abbreviation into a domain", () => {
+  // "U. S. ZORA RESERVE" is a real holding; collapsing its dots must not produce a match.
+  const result = classifyToken({ name: "U. S. ZORA RESERVE", symbol: "USZR" });
+  assert.equal(result.suspicious, false);
+});
