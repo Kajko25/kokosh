@@ -1,0 +1,62 @@
+name: agent
+
+# The agent is the deployed half of this repo, and its test suite needs no network — every
+# upstream (Blockscout, the RPC client, the nonce store) is injected — so there is no reason
+# for a push to land untested.
+on:
+  push:
+    branches: [main]
+    paths: ["agent/**", ".github/workflows/agent.yml"]
+  pull_request:
+    paths: ["agent/**", ".github/workflows/agent.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: agent
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 24.x is what this is developed and run against locally. 22.x is here because the Vercel
+        # runtime is not pinned to the local version and the suite has never been executed on it
+        # -- this environment cannot install a second Node, so CI is the first place that happens.
+        # fail-fast is off so a 22-only failure still reports the 24 result.
+        node: ["22.x", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      # sentinel-run.mjs and the cron wrapper are the two files with no unit tests: one needs a
+      # live RPC and a keystore, the other is shell. A parse gate is not coverage, but it does
+      # catch the class of breakage that would otherwise only surface at 09:23 UTC in a log
+      # nobody reads -- which is exactly how the last cron outage went unnoticed for a day.
+      - name: Syntax gate on the untested scripts
+        run: |
+          node --check scripts/sentinel-run.mjs
+          node --check scripts/calibrate-heuristics.mjs
+          bash -n scripts/sentinel-cron.sh
+
+      # The committed snapshots are what /exposure and /sentinel serve. Malformed JSON here would
+      # deploy an agent that reports "never scanned" forever, which has happened once already for
+      # a neighbouring reason (the file living outside the deployed root).
+      - name: Committed data files are valid JSON
+        run: |
+          node -e "JSON.parse(require('node:fs').readFileSync('data/approvals-report.json','utf8'))"
+          node -e "JSON.parse(require('node:fs').readFileSync('data/sentinel-state.json','utf8'))"
