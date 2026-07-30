@@ -1,10 +1,10 @@
 {
-  "publishedAt": "2026-07-30T23:29:14Z",
+  "publishedAt": "2026-07-30T23:30:13Z",
   "outcome": "clean",
   "exitCode": 0,
   "newFindings": 0,
-  "lastRunAt": "2026-07-30T23:28:58.178Z",
-  "lastScannedBlock": "49332392",
+  "lastRunAt": "2026-07-30T23:30:13.051Z",
+  "lastScannedBlock": "49332431",
   "knownFlaggedTokens": 63,
   "detectorFingerprint": "fb9e99a705d8",
   "codeCommit": "322d2fcf3d2fad9345b6defbf86054f758786a89",
