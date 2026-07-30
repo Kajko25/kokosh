@@ -56,14 +56,16 @@ test("flags messenger and shortener lures", () => {
 test("does not flag legitimate names that merely contain a dot", () => {
   // Measured against the wallet's real holdings: these must stay clean or the rule is worse
   // than the gap it closes.
-  for (const [name, symbol] of [
-    ["Rai.Finance", "SOFI"],
-    ["U. S. ZORA RESERVE", "USZR"],
-    ["Coinbase Wrapped BTC", "CBBTC"],
-    ["Bridged USDC (Base)", "USDBC"],
-    ["Art by Virtuals", "ART"],
+  // cbBTC and USDbC carry their real addresses: their tickers are in the canonical map now, so
+  // a placeholder address would (correctly) make them impersonators and stop testing dots.
+  for (const [name, symbol, address] of [
+    ["Rai.Finance", "SOFI", "0x1"],
+    ["U. S. ZORA RESERVE", "USZR", "0x1"],
+    ["Coinbase Wrapped BTC", "CBBTC", "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf"],
+    ["Bridged USDC (Base)", "USDBC", "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca"],
+    ["Art by Virtuals", "ART", "0x1"],
   ]) {
-    assert.equal(classifyToken({ name, symbol, address: "0x1" }).suspicious, false, name);
+    assert.equal(classifyToken({ name, symbol, address }).suspicious, false, name);
   }
 });
 
@@ -188,4 +190,31 @@ test("the new lure rules leave real collections alone", () => {
   ]) {
     assert.equal(classifyToken({ name, symbol, address: "0xfeed" }).suspicious, false, name);
   }
+});
+
+test("flags an NFT collection borrowing a major token's ticker", () => {
+  // "cakesv4.finance" is invisible to every text rule: `finance` is deliberately not in the
+  // TLD list, and the name carries no urgency, reward or cash language. Six ERC-721
+  // collections in this wallet use the CAKE symbol.
+  const result = classifyToken({ name: "cakesv4.finance", symbol: "CAKE", address: "0x87e4ee31417889282667a5d56240719395a5f07f" });
+  assert.equal(result.suspicious, true);
+  assert.ok(result.reasons.includes("impersonates_CAKE"));
+});
+
+test("the real deployments of the tickers in the map are not flagged", () => {
+  // The risk of a bigger map is flagging the genuine token, so these are the actual holdings
+  // in this wallet at the addresses recorded as canonical.
+  for (const [symbol, address] of [
+    ["USDC", "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"],
+    ["cbBTC", "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf"],
+    ["USDbC", "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca"],
+  ]) {
+    assert.equal(classifyToken({ name: symbol, symbol, address }).suspicious, false, symbol);
+  }
+});
+
+test("canonical matching is case-insensitive on both sides", () => {
+  // Blockscout returns mixed-case addresses and PancakeSwap's own symbol() returns "Cake".
+  const result = classifyToken({ name: "PancakeSwap Token", symbol: "Cake", address: "0x3055913C90Fcc1A6CE9a358911721eEb942013A1" });
+  assert.equal(result.suspicious, false);
 });

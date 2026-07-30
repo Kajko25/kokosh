@@ -63,11 +63,31 @@ const HOMOGLYPH_PATTERN = /[Ѐ-ӿͰ-Ͽ]/;
 // with a 2.1B total supply (real AAVE's global supply is ~16M) — a scam, but the old logic
 // only compared strings and explicitly required the symbol to differ from the known ticker,
 // so an exact-symbol copy (the simplest and most common impersonation) was never flagged.
+//
+// Every address below was verified on Base mainnet before being added: `symbol()` read
+// on-chain and matched, `name()` read and matched the real project, and the Blockscout holder
+// count checked (112k–1.2M holders each) as evidence of which deployment is the canonical one.
+// An address guessed wrong here is worse than a missing entry — it would flag the *real* token
+// as an impostor.
+//
+// CAKE earns its place directly: six ERC-721 collections in this wallet use that symbol, and
+// one of them ("cakesv4.finance") is invisible to every other rule.
 const KNOWN_TICKER_ADDRESSES = {
   AERO: "0x940181a94a35a4569e4529a3cdfb74e38fd98631",
   USDC: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
   WETH: "0x4200000000000000000000000000000000000006",
   AAVE: "0x63706e401c06ac8513145b7687a14804d17f814b",
+  CAKE: "0x3055913c90fcc1a6ce9a358911721eeb942013a1",
+  DAI: "0x50c5725949a6f0c72e6c4a641f24049a917db0cb",
+  EURC: "0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42",
+  CBBTC: "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+  USDBC: "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca",
+  ZORA: "0x1111111111166b7fe7bd91427724b487980afc69",
+  MORPHO: "0xbaa5cc21fd487b8fcc2f632f3f4e8d37262a0842",
+  DEGEN: "0x4ed4e862860bed51a9570b96d89af5e1b0efefed",
+  TOSHI: "0xac1bd2486aaf3b5c0fc3fd868558b082a531b2b4",
+  VIRTUAL: "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b",
+  WSTETH: "0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452",
 };
 
 export function classifyToken({ name = "", symbol = "", address = "" }) {
