@@ -12,6 +12,7 @@ import { describeFreshness } from "./lib/freshness.mjs";
 import { failure } from "./lib/httpError.mjs";
 import { createRateLimiter, rateLimitMiddleware } from "./lib/rateLimit.mjs";
 import { createTtlCache } from "./lib/cache.mjs";
+import { computeHygieneScore } from "./lib/hygieneScore.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -62,7 +63,6 @@ const flaggedForReport = (flagged) =>
 async function computeAudit(sources) {
   const [report, holdings] = await Promise.all([readExposureReport(), scanHoldings(sources)]);
   const { flagged } = holdings;
-  const liveApprovals = report ? report.erc20Live.length + report.permit2Live.length : 0;
   return {
     wallet: WALLET,
     auditedAt: new Date().toISOString(),
@@ -79,7 +79,7 @@ async function computeAudit(sources) {
       flaggedCount: flagged.length,
       flagged: flaggedForReport(flagged),
     },
-    hygieneScore: Math.max(0, 100 - liveApprovals * 5 - flagged.length * 2),
+    ...computeHygieneScore({ report, flaggedCount: flagged.length }),
   };
 }
 
