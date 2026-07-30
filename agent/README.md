@@ -447,7 +447,11 @@ What makes it correct rather than merely fast, since a wrong refresh is worse th
 - A 250-block overlap is re-scanned each run, so a report written from a shallowly-reorged block
   cannot leave a permanent hole.
 - The anchor is written only after the allowance re-read succeeds; a failed run cannot advance it
-  past blocks it never processed. A missing anchor falls back to a full scan rather than guessing,
+  past blocks it never processed.
+- `scannedAt` is taken when the tip is read, not when the run finishes, and `scanFinishedAt`
+  records the latter separately. A full scan runs for hours, so a completion timestamp would
+  claim freshness the data does not have — the report covers the chain as of `scannedToBlock`,
+  and `/exposure` derives `stale` from `scannedAt`. A missing anchor falls back to a full scan rather than guessing,
   and one ahead of the chain tip is refused outright — that would make every future run scan an
   empty range and report "nothing new" while looking healthy.
 

@@ -192,6 +192,12 @@ async function main() {
   const wantsFull = args.includes("--full");
   const previous = readPreviousReport();
   const latest = await clients[0].getBlockNumber();
+  // Taken here, next to the block read it describes -- not at the end. A full scan runs for
+  // hours, so a timestamp written on completion claims freshness the data does not have: the
+  // report covers the chain as of `latest`, which is *now*, and everything after that block is
+  // outside the scan whatever the clock says later. /exposure derives `stale` from this field,
+  // and an exposure report must not round its own age down.
+  const scannedAt = new Date().toISOString();
 
   let fromBlock = 0n;
   let mode = "full";
@@ -234,7 +240,8 @@ async function main() {
 
   const report = {
     owner: OWNER,
-    scannedAt: new Date().toISOString(),
+    scannedAt,
+    scanFinishedAt: new Date().toISOString(),
     // The anchor the next incremental run resumes from. Written only after the re-read
     // succeeded, so a failed run cannot advance it past blocks that were never processed.
     scannedToBlock: latest.toString(),
