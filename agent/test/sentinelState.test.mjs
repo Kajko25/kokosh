@@ -69,3 +69,13 @@ test("the tip check is skipped when no latest block is supplied", () => {
   const state = parseSentinelState({ lastScannedBlock: 99_999_999_999n });
   assert.equal(state.lastScannedBlock, "99999999999");
 });
+
+test("a detector fingerprint is optional but must be a string when present", () => {
+  const base = { lastScannedBlock: "100" };
+  assert.equal(parseSentinelState({ ...base }).detectorFingerprint, undefined);
+  assert.equal(parseSentinelState({ ...base, detectorFingerprint: "abc123" }).detectorFingerprint, "abc123");
+
+  // A number would compare unequal to the real fingerprint forever, so every cycle would
+  // re-baseline and the sentinel would never report a token again -- working, silently useless.
+  assert.throws(() => parseSentinelState({ ...base, detectorFingerprint: 12345 }), /detectorFingerprint must be a string/);
+});

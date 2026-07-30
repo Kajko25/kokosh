@@ -15,8 +15,9 @@ import { parseSentinelState } from "../lib/sentinelState.mjs";
 import { promisify } from "node:util";
 import { createPublicClient, http, parseAbiItem, getAddress, encodeAbiParameters } from "viem";
 import { base } from "viem/chains";
-import { classifyToken } from "../lib/scamHeuristics.mjs";
-import { fetchTokenHoldings } from "../lib/blockscout.mjs";
+import { classifyToken, detectorFingerprint } from "../lib/scamHeuristics.mjs";
+import { fetchTokenHoldings, fetchNftHoldings } from "../lib/blockscout.mjs";
+import { planTokenFindings } from "../lib/tokenFindings.mjs";
 
 const execFileAsync = promisify(execFile);
 const OWNER = "0x2984Bb4953cfCE2cEc957388BE686D6c38779234";
@@ -179,27 +180,44 @@ async function main() {
   // The two halves of the check are independent: a Blockscout outage should not discard an
   // approval finding the chain scan already produced. Previously any holdings failure threw
   // out of main() and the whole cycle was lost, approvals included.
+  //
+  // Both walks or neither. A partial holdings scan cannot invent a finding, but it can do
+  // something worse: re-baselining on a short list records fewer tokens as known, so the
+  // missing ones return next cycle looking new and get attested with the wrong date.
   let holdings = null;
   try {
-    holdings = await fetchTokenHoldings(OWNER, {
-      onTruncated: (n) => console.warn(`holdings truncated at ${n} — page cap reached, scan is partial`),
-    });
+    const onTruncated = (n) => console.warn(`holdings truncated at ${n} — page cap reached, scan is partial`);
+    const [tokens, nfts] = await Promise.all([
+      fetchTokenHoldings(OWNER, { onTruncated }),
+      fetchNftHoldings(OWNER, { onTruncated }),
+    ]);
+    holdings = [...tokens, ...nfts];
+    console.log(`holdings: ${tokens.length} ERC-20 + ${nfts.length} NFT collections`);
   } catch (err) {
     console.warn(`holdings scan failed (${err?.message ?? err}) — approval results below are still valid`);
   }
 
   if (holdings) {
-    const flaggedNow = new Set(
-      holdings.map((t) => ({ ...t, ...classifyToken(t) })).filter((t) => t.suspicious).map((t) => t.address.toLowerCase())
-    );
-    const knownFlagged = new Set((state.knownFlaggedTokens ?? []).map((a) => a.toLowerCase()));
-    for (const addr of flaggedNow) {
-      if (!knownFlagged.has(addr)) {
-        findings.push(`new suspicious token: ${addr}`);
-        knownFlagged.add(addr);
-      }
+    const flaggedNow = holdings.map((t) => ({ ...t, ...classifyToken(t) })).filter((t) => t.suspicious);
+    const fingerprint = detectorFingerprint();
+    const plan = planTokenFindings({
+      knownFlaggedTokens: state.knownFlaggedTokens,
+      flaggedNow,
+      fingerprint,
+      stateFingerprint: state.detectorFingerprint,
+    });
+
+    if (plan.rebaselined) {
+      // Deliberately loud: this is the cycle where genuinely new dust would be missed, and the
+      // reason it is skipped belongs in the log next to the run that skipped it.
+      console.log(
+        `re-baselining ${flaggedNow.length} flagged token(s): ${plan.reason}. ` +
+          "Nothing attested this cycle — a rule change is not wallet exposure."
+      );
     }
-    state.knownFlaggedTokens = [...knownFlagged];
+    findings.push(...plan.findings);
+    state.knownFlaggedTokens = plan.knownFlaggedTokens;
+    state.detectorFingerprint = fingerprint;
   }
   state.lastScannedBlock = latest.toString();
   state.lastRunAt = new Date().toISOString();

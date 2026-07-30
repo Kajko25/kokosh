@@ -56,5 +56,14 @@ export function parseSentinelState(raw, { latestBlock } = {}) {
     throw new InvalidSentinelState("alertedApprovals must be an array");
   }
 
+  // Optional: absent on state files written before the detector was fingerprinted, which
+  // planTokenFindings treats as "changed" and re-baselines. A non-string, though, would compare
+  // unequal forever and re-baseline every cycle, so the sentinel would never report a token
+  // again — silent uselessness, which is this agent's recurring failure mode.
+  const { detectorFingerprint } = parsed;
+  if (detectorFingerprint !== undefined && typeof detectorFingerprint !== "string") {
+    throw new InvalidSentinelState(`detectorFingerprint must be a string, got ${typeof detectorFingerprint}`);
+  }
+
   return { ...parsed, lastScannedBlock: block.toString(), knownFlaggedTokens, alertedApprovals };
 }
