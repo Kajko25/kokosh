@@ -1,6 +1,6 @@
 {
-  "lastScannedBlock": "49311419",
-  "lastRunAt": "2026-07-30T11:50:00.150Z",
+  "lastScannedBlock": "49332431",
+  "lastRunAt": "2026-07-30T23:30:13.051Z",
   "alertedApprovals": [],
   "knownFlaggedTokens": [
     "0x125a7410ea1ca56c1d18e4d6bb442627800bc9dd",
@@ -67,6 +67,6 @@
     "0xd9f0644eb3bd8e51f66c18a7a5e8c599fc9fb913",
     "0xef6bed0f6c64708b01ba691e1081656489dd304a"
   ],
-  "baselineNote": "knownFlaggedTokens re-baselined automatically on 2026-07-30, when the detector fingerprint in this file (absent) disagreed with the running ruleset (fb9e99a705d8) after NFT scanning and six new rules took the flagged count from 32 to 63. Those collections were always held; only the scanner's field of view changed. Earlier re-seedings (2026-07-29, after the pagination fix and the bare-domain rule) were done by hand after a human noticed \u2014 lib/tokenFindings.mjs now enforces it instead. The governing rule is unchanged: EAS attestations record changes in the wallet, git records changes in the detector.",
+  "baselineNote": "knownFlaggedTokens re-baselined automatically on 2026-07-30, when the detector fingerprint in this file (absent) disagreed with the running ruleset (fb9e99a705d8) after NFT scanning and six new rules took the flagged count from 32 to 63. Those collections were always held; only the scanner's field of view changed. Earlier re-seedings (2026-07-29, after the pagination fix and the bare-domain rule) were done by hand after a human noticed — lib/tokenFindings.mjs now enforces it instead. The governing rule is unchanged: EAS attestations record changes in the wallet, git records changes in the detector.",
   "detectorFingerprint": "fb9e99a705d8"
 }

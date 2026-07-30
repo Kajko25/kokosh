@@ -8,6 +8,8 @@ cd "$(dirname "$0")/../.."
 # cron runs with a bare PATH that has no nvm shim, so a plain `node` is not found — the
 # 2026-07-29 cycle died with exit 127 after reaching the scan. Resolved explicitly here, and the
 # failure is loud rather than a "command not found" buried in a log nobody reads.
+HEARTBEAT_EARLY="$(dirname "$0")/sentinel-heartbeat.sh"
+
 if command -v node >/dev/null 2>&1; then
   NODE_BIN="$(command -v node)"
 else
@@ -16,8 +18,17 @@ else
 fi
 if [ -z "${NODE_BIN:-}" ] || [ ! -x "$NODE_BIN" ]; then
   echo "$(date -u -Iseconds) sentinel-run FAILED — no usable node binary (PATH=$PATH)"
+  # The 2026-07-29 failure exactly. Publishing it is the point: this is the shape of outage the
+  # heartbeat exists to surface, and it happens before any node code could report it.
+  bash "$HEARTBEAT_EARLY" failed 127 0 || true
   exit 127
 fi
+
+HEARTBEAT="$(dirname "$0")/sentinel-heartbeat.sh"
+# Publishes off-machine proof that this cycle ran. Called on every exit path, including the ones
+# that do no work: a stand-down that publishes nothing is indistinguishable from a cron that
+# never fired, which is the failure this whole mechanism exists to make visible.
+heartbeat() { bash "$HEARTBEAT" "$@" || true; }
 
 STATE_DIR="docs"
 ACTIONS_LOG="$STATE_DIR/sentinel-actions-today.json"
@@ -39,12 +50,14 @@ fi
 
 if [ "$count" -ge "$MAX_ACTIONS_PER_DAY" ]; then
   echo "$(date -u -Iseconds) daily action cap ($MAX_ACTIONS_PER_DAY) already reached, skipping run"
+  heartbeat capped 0 0
   exit 0
 fi
 
 roll=$((RANDOM % 100))
 if [ "$roll" -lt "$STAND_DOWN_PCT" ]; then
   echo "$(date -u -Iseconds) stand-down roll ($roll < $STAND_DOWN_PCT), skipping this cycle"
+  heartbeat stand-down 0 0
   exit 0
 fi
 
@@ -66,9 +79,20 @@ echo "$output"
 
 if [ "$rc" -ne 0 ]; then
   echo "$(date -u -Iseconds) sentinel-run FAILED (exit $rc) — output above, state not advanced"
+  heartbeat failed "$rc" 0
   exit "$rc"
 fi
 echo "$(date -u -Iseconds) run finished cleanly"
+
+# `|| true` is load-bearing: with `set -e` and pipefail, grep finding nothing exits 1 and kills
+# the script here — silently, before the heartbeat below ever runs. That is the same trap this
+# file already documents around the scan itself, and it bit again three lines later.
+found="$(printf '%s' "$output" | grep -oE '[0-9]+ new finding\(s\)' | grep -oE '^[0-9]+' | head -1 || true)"
+if [ -n "$found" ]; then
+  heartbeat findings 0 "$found"
+else
+  heartbeat clean 0 0
+fi
 
 if echo "$output" | grep -q "finding(s):"; then
   python3 -c "

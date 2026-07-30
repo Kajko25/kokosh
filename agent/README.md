@@ -38,6 +38,7 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `lib/sentinelReport.mjs` | reads the sentinel's state for `/sentinel` — age, overdue, detector match |
 | `scripts/sentinel-run.mjs` | the autonomous check (see [Sentinel](#sentinel)) |
 | `scripts/sentinel-cron.sh` | jitter / stand-down / daily-cap wrapper around it |
+| `scripts/sentinel-heartbeat.sh` | publishes each cycle's outcome to the `sentinel-heartbeat` branch |
 | `scripts/pay-audit.mjs` | x402 *buyer* — pays another service, proving the other side of the flow |
 | `scripts/calibrate-heuristics.mjs` | runs the rules over live holdings and prints what fired — how rule changes are judged |
 | `data/approvals-report.json` | committed approval snapshot served by `/exposure` |
@@ -474,6 +475,37 @@ local refresh changes nothing live until the file is committed and `vercel --pro
 `scripts/sentinel-cron.sh` wraps the run with jitter (`MAX_JITTER_SECONDS`, default 45 min), a
 per-cycle stand-down probability (`STAND_DOWN_PCT`, default 40), and a hard daily action cap
 (`MAX_ACTIONS_PER_DAY`, default 2) so the schedule doesn't read as a fixed-cadence bot.
+
+#### Heartbeat
+
+Every cycle publishes one JSON to the **`sentinel-heartbeat`** branch, readable without a
+checkout:
+
+```
+https://raw.githubusercontent.com/Kajko25/kokosh/sentinel-heartbeat/sentinel-heartbeat.json
+```
+
+It carries `publishedAt`, the `outcome` (`stand-down` / `capped` / `clean` / `findings` /
+`failed`), the exit code, and what the scan recorded — `lastRunAt`, `lastScannedBlock`,
+`knownFlaggedTokens`, `detectorFingerprint` — plus the `codeCommit` that produced it, so a
+heartbeat from a stale checkout is identifiable.
+
+Why it exists: `/sentinel` made the cycle observable from outside, but only for state baked into
+the deployed bundle, and a local cron run does not touch that. From anywhere but the laptop,
+"did the cron fire?" had no answer. **Absence is the signal** — a stale `publishedAt` means no
+cycle completed, whatever the reason. Cycles that do no work publish too (`stand-down`,
+`capped`); one that published nothing would be indistinguishable from a cron that never ran,
+which is the exact failure this addresses.
+
+It is built with git plumbing — `hash-object`, `mktree`, `commit-tree`, then a push of the
+resulting object — so it never touches the working tree, the index, or `HEAD`. That is not
+fastidiousness: this fires unattended and may land while someone is mid-edit or mid-rebase on
+`main`, and a script doing `git add` there could commit unrelated work in progress. Publishing
+failure is logged and never fatal, since a failed push says nothing about whether the scan
+worked.
+
+It does not fix the underlying limitation: if the machine is asleep at 09:23 local, no cycle runs
+and no heartbeat appears. It makes that visible rather than silent.
 
 Reading its log: a healthy cycle ends with `run finished cleanly`, a failed one with
 `sentinel-run FAILED (exit N)`. A cycle that stops right after `sleeping Ns of jitter` and never
