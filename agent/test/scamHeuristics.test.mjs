@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyToken } from "../lib/scamHeuristics.mjs";
+import { classifyToken, RULE_IDS, detectorFingerprint } from "../lib/scamHeuristics.mjs";
 
 test("flags a name containing a URL", () => {
   const result = classifyToken({ name: "Claim: https://aerodrome.supply", symbol: "AERO" });
@@ -217,4 +217,34 @@ test("canonical matching is case-insensitive on both sides", () => {
   // Blockscout returns mixed-case addresses and PancakeSwap's own symbol() returns "Cake".
   const result = classifyToken({ name: "PancakeSwap Token", symbol: "Cake", address: "0x3055913C90Fcc1A6CE9a358911721eEb942013A1" });
   assert.equal(result.suspicious, false);
+});
+
+test("the rule list covers every reason the classifier can emit", () => {
+  // If a rule is added without listing it here, the fingerprint stops tracking the ruleset and
+  // the sentinel loses its ability to tell a detector change from a wallet change.
+  const emitted = new Set();
+  for (const token of [
+    { name: "Claim: https://aerodrome.supply", symbol: "AERO", address: "0x1" },
+    { name: "DAONEXT. COM", symbol: "." },
+    { name: "HYPERLIQUID REWARD", symbol: "HL" },
+    { name: "# UP $5,000 TO $50,000", symbol: "." },
+    { name: "#0 11 SCAN ME", symbol: "TRUSA" },
+    { name: "Don't miss this chance!", symbol: "." },
+    { name: "Тoken", symbol: "TKN" },
+    { name: "cakesv4.finance", symbol: "CAKE", address: "0x87e4ee31417889282667a5d56240719395a5f07f" },
+  ]) {
+    for (const reason of classifyToken(token).reasons) emitted.add(reason);
+  }
+
+  for (const reason of emitted) assert.ok(RULE_IDS.includes(reason), `${reason} is missing from RULE_IDS`);
+});
+
+test("the detector fingerprint is stable across calls and order-independent", () => {
+  assert.equal(detectorFingerprint(), detectorFingerprint());
+  assert.match(detectorFingerprint(), /^[0-9a-f]{12}$/);
+});
+
+test("the fingerprint covers the ticker map, since adding a ticker changes what gets flagged", () => {
+  assert.ok(RULE_IDS.includes("impersonates_CAKE"));
+  assert.ok(RULE_IDS.includes("impersonates_AAVE"));
 });

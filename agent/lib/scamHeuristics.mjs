@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 // Heuristic scam-airdrop token detection. Real signals seen in kajko24.base.eth's own
 // wallet history (e.g. "Claim: https://aerodrome.supply" impersonating AERO, "Fyde Points
 // (Claim: www.fyde.cc)"): name/symbol embeds a URL, "claim"-style urgency language, or
@@ -34,11 +36,6 @@ const CLAIM_PATTERN = /\bclaim\b|\buntil\b|\bexpires?\b|\bvisit\b|\bairdrop\b/i;
 // collections.
 const REWARD_PATTERN = /\breward(s|ed)?\b|\bfree\b|\bprize\b|\bwin(ner|nings)?\b|\bbonus\b|\bgiveaway\b|\bearnings\b|\bredeem\b/i;
 
-// A quoted sum of money: "# UP $5,000 TO $50,000", "340.000$ JUP Win", "135.000$ Win".
-// The digits must be *grouped* in thousands, or carry a currency word, rather than merely
-// following a dollar sign. The loose version — any $ next to any digits — flagged
-// "EIP-4844 is Based" (symbol "$4844"), a legitimate collection in this wallet, and a
-// detector that cries wolf on real holdings is one its owner stops reading.
 // "#0 11 SCAN ME" and "[ #181 ] Scan the QR to get a reward" move the destination out of the
 // text entirely and into an image, which defeats every rule that looks for a domain. A token
 // name asking to be scanned has no legitimate use: the collection is not where you scan from.
@@ -48,6 +45,11 @@ const QR_PATTERN = /\bscan\b|\bqr\b/i;
 // ERC-1155 contracts here.
 const PRESSURE_PATTERN = /don'?t miss|last chance|hurry|limited time|act now/i;
 
+// A quoted sum of money: "# UP $5,000 TO $50,000", "340.000$ JUP Win", "135.000$ Win".
+// The digits must be *grouped* in thousands, or carry a currency word, rather than merely
+// following a dollar sign. The loose version — any $ next to any digits — flagged
+// "EIP-4844 is Based" (symbol "$4844"), a legitimate collection in this wallet, and a
+// detector that cries wolf on real holdings is one its owner stops reading.
 const GROUPED_THOUSANDS = String.raw`\d{1,3}(?:[.,\s]\d{3})+`;
 const MONEY_PATTERN = new RegExp(
   String.raw`(?:\$|\busd[tc]?\b)\s?${GROUPED_THOUSANDS}|${GROUPED_THOUSANDS}\s?(?:\$|\busd[tc]?\b)`,
@@ -89,6 +91,37 @@ const KNOWN_TICKER_ADDRESSES = {
   VIRTUAL: "0x0b3e328455c4059eeb9e3f84b5543f74e24e7e1b",
   WSTETH: "0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452",
 };
+
+// Every reason this module can emit, and a short fingerprint over them.
+//
+// The sentinel attests findings on-chain, so it has to answer a question that has bitten this
+// project twice already: did the wallet change, or did the detector? Adding a rule makes tokens
+// that have been sitting there for months look brand new, and attesting those misdates the
+// exposure. Both times the baseline was re-seeded by hand after noticing. Deriving the
+// fingerprint from the rule list means it changes by itself when the rules do, so the sentinel
+// can notice without anyone remembering to.
+export const RULE_IDS = [
+  "name_or_symbol_contains_url",
+  "name_or_symbol_contains_bare_domain",
+  "urgency_language",
+  "reward_language",
+  "quotes_a_cash_amount",
+  "qr_code_lure",
+  "pressure_language",
+  "non_latin_homoglyph",
+  ...Object.keys(KNOWN_TICKER_ADDRESSES).map((ticker) => `impersonates_${ticker}`),
+];
+
+/**
+ * A stable short digest of the active ruleset.
+ *
+ * Deliberately content-derived rather than a hand-maintained version number: a rule added
+ * without bumping a constant is exactly the case that goes unnoticed. Ordered, so the digest
+ * tracks *which* rules exist and not the order they happen to be listed in.
+ */
+export function detectorFingerprint() {
+  return createHash("sha256").update([...RULE_IDS].sort().join("|")).digest("hex").slice(0, 12);
+}
 
 export function classifyToken({ name = "", symbol = "", address = "" }) {
   const reasons = [];
