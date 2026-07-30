@@ -39,6 +39,15 @@ const REWARD_PATTERN = /\breward(s|ed)?\b|\bfree\b|\bprize\b|\bwin(ner|nings)?\b
 // following a dollar sign. The loose version — any $ next to any digits — flagged
 // "EIP-4844 is Based" (symbol "$4844"), a legitimate collection in this wallet, and a
 // detector that cries wolf on real holdings is one its owner stops reading.
+// "#0 11 SCAN ME" and "[ #181 ] Scan the QR to get a reward" move the destination out of the
+// text entirely and into an image, which defeats every rule that looks for a domain. A token
+// name asking to be scanned has no legitimate use: the collection is not where you scan from.
+const QR_PATTERN = /\bscan\b|\bqr\b/i;
+
+// Pure pressure, no destination and no sum: "Don't miss this chance!" appears on two separate
+// ERC-1155 contracts here.
+const PRESSURE_PATTERN = /don'?t miss|last chance|hurry|limited time|act now/i;
+
 const GROUPED_THOUSANDS = String.raw`\d{1,3}(?:[.,\s]\d{3})+`;
 const MONEY_PATTERN = new RegExp(
   String.raw`(?:\$|\busd[tc]?\b)\s?${GROUPED_THOUSANDS}|${GROUPED_THOUSANDS}\s?(?:\$|\busd[tc]?\b)`,
@@ -86,6 +95,12 @@ export function classifyToken({ name = "", symbol = "", address = "" }) {
   }
   if (MONEY_PATTERN.test(name) || MONEY_PATTERN.test(symbol)) {
     reasons.push("quotes_a_cash_amount");
+  }
+  if (QR_PATTERN.test(name) || QR_PATTERN.test(symbol)) {
+    reasons.push("qr_code_lure");
+  }
+  if (PRESSURE_PATTERN.test(name) || PRESSURE_PATTERN.test(symbol)) {
+    reasons.push("pressure_language");
   }
   if (HOMOGLYPH_PATTERN.test(name) || HOMOGLYPH_PATTERN.test(symbol)) {
     reasons.push("non_latin_homoglyph");

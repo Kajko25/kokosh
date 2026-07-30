@@ -161,3 +161,31 @@ test("urgency language in the symbol counts, even when the name looks clean", ()
     assert.ok(result.reasons.includes("urgency_language"), symbol);
   }
 });
+
+test("flags a QR-code lure, which hides the destination in an image", () => {
+  for (const name of ["#0 11 SCAN ME", "[ #181 ] Scan the QR to get a reward"]) {
+    const result = classifyToken({ name, symbol: "" });
+    assert.ok(result.reasons.includes("qr_code_lure"), name);
+  }
+});
+
+test("flags pressure language carrying no destination at all", () => {
+  const result = classifyToken({ name: "Don't miss this chance!", symbol: "." });
+  assert.equal(result.suspicious, true);
+  assert.ok(result.reasons.includes("pressure_language"));
+});
+
+test("the new lure rules leave real collections alone", () => {
+  // A cross-section of genuine holdings, including ones with digits, punctuation and brand
+  // names that the looser versions of these rules would have caught.
+  for (const [name, symbol] of [
+    ["Basenames", "BASENAME"],
+    ["Base Colors", "COLORS"],
+    ["Uniswap V3 Positions NFT-V1", "UNI-V3-POS"],
+    ["adidas Onchain: Summer of Sports", "aOSoS"],
+    ["ENS 7th Anniversary NFT", ""],
+    ["Waymarks", "WAYMARK"],
+  ]) {
+    assert.equal(classifyToken({ name, symbol, address: "0xfeed" }).suspicious, false, name);
+  }
+});
