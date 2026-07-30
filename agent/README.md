@@ -108,15 +108,21 @@ var was missing, so they are observable from outside rather than only in a start
 Live approval exposure for the wallet.
 
 - `200` with `liveErc20Approvals`, `livePermit2Grants`, the full `approvals` /
-  `permit2Grants` arrays, and freshness fields `scannedAt`, `ageSeconds`, `stale`
+  `permit2Grants` arrays, freshness fields `scannedAt`, `ageSeconds`, `stale`, and the scan's
+  own anchor: `scannedToBlock` and `scanMode`
 - `202 {"status":"not_scanned_yet"}` when no snapshot exists
 
 **Caveat, by design:** this serves `data/approvals-report.json`, a snapshot committed to the
-repo by `scripts/scan-approvals.mjs` — it is not scanned per request. Because that scan is a
-manual step, the response states its own age: `ageSeconds`, plus `stale: true` once the
-snapshot is over a day old. A missing or unparseable timestamp also reports `stale: true` —
-failing towards "trust this data" would be the wrong default for an exposure report. Cached 5
-minutes.
+repo by `scripts/scan-approvals.mjs` — it is not scanned per request. The response therefore
+states its own age (`ageSeconds`, plus `stale: true` past a day) and its anchor
+(`scannedToBlock`, `scanMode`). Age alone is not enough: it moves whenever the file is
+rewritten, so it cannot distinguish a real refresh from a fresh deploy of an old snapshot,
+whereas the anchor can be compared against the chain tip. A missing or unparseable timestamp
+also reports `stale: true` — failing towards "trust this data" would be the wrong default for an
+exposure report. Cached 5 minutes.
+
+Keeping it fresh is no longer an hour's work: see [Refreshing the approval
+snapshot](#refreshing-the-approval-snapshot).
 
 ### `GET /drops`
 
@@ -379,10 +385,10 @@ current holdings (ERC-20 **and** NFT collections), and diffs both against what i
 
 **What it structurally cannot see:** approvals granted before its baseline. The sentinel scans
 *forward* from `lastScannedBlock`, which makes each cycle cheap but means anything already live
-when the baseline was seeded is invisible to it forever. `scripts/scan-approvals.mjs` scans from
-block 0 and is what catches those — run it periodically, not just once. A live WETH allowance to
-the Aave v3 Pool, left over from a July 23 borrow/repay cycle, sat unnoticed for exactly this
-reason until a full scan found it.
+when the baseline was seeded is invisible to it forever. `scripts/scan-approvals.mjs` is what
+catches those. A live WETH allowance to the Aave v3 Pool, left over from a July 23 borrow/repay
+cycle, sat unnoticed for exactly this reason until a full scan found it — and the reason it sat
+that long is that the scan used to cost 50 minutes. It now costs seconds; see below.
 
 **What it structurally cannot do:** revoke. Only `0x2984` can call `approve()` on its own
 allowances, and that wallet signs exclusively via Ledger — so an unattended cron can report a
@@ -417,6 +423,41 @@ Since Base produces roughly 43,000 blocks a day, the range walk is not an optimi
 unchunked scan fails outright on any gap longer than a few hours. Rate-limit errors (`-32016`)
 are retried with doubling backoff; every other error propagates immediately, so a real bug
 stays a fast, loud failure. See `lib/rangeScan.mjs` and `test/rangeScan.test.mjs`.
+
+### Refreshing the approval snapshot
+
+```bash
+node scripts/scan-approvals.mjs            # incremental: resumes from the report's anchor
+node scripts/scan-approvals.mjs --full     # whole history from block 0
+```
+
+The full walk is ~4,900 windows per event and takes about **50 minutes**, which is why it was run
+roughly never — and why `/exposure` served a two-day-old snapshot while the paid `/audit`
+computed `hygieneScore` from it. The incremental refresh resumes from `scannedToBlock` and takes
+**seconds** (14s for 75,000 blocks on its first real run), so the snapshot can actually be kept
+current.
+
+What makes it correct rather than merely fast, since a wrong refresh is worse than a stale one:
+
+- New `Approval` / `Permit` events since the anchor find grants made in the gap. An allowance
+  only becomes non-zero through a call that emits an event.
+- **Every previously-live pair is re-read regardless of events.** `transferFrom` decrements a
+  finite allowance and ERC-20 requires no event for it, so a grant spent to zero leaves no log —
+  events alone would keep reporting exposure that no longer exists.
+- A 250-block overlap is re-scanned each run, so a report written from a shallowly-reorged block
+  cannot leave a permanent hole.
+- The anchor is written only after the allowance re-read succeeds; a failed run cannot advance it
+  past blocks it never processed. A missing anchor falls back to a full scan rather than guessing,
+  and one ahead of the chain tip is refused outright — that would make every future run scan an
+  empty range and report "nothing new" while looking healthy.
+
+Both modes scan Permit2's `Permit` event as well as `Approval`. Grants made by signature emit the
+former, so a router taking a permit instead of an on-chain approve was previously invisible; no
+such grant exists in this wallet's recent history, so that is a hole closed rather than a miss
+fixed. Logic and its tests live in `lib/approvalScan.mjs` / `test/approvalScan.test.mjs`.
+
+**The snapshot only reaches production on a deploy.** It is served from the deployed bundle, so a
+local refresh changes nothing live until the file is committed and `vercel --prod` runs.
 
 ### Scheduling
 
