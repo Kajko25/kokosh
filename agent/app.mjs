@@ -242,6 +242,11 @@ export function makeApp({
     res.json({
       wallet: WALLET,
       ...describeFreshness(report.scannedAt, { now }),
+      // The block the snapshot actually reached, and how it got there. Age alone cannot
+      // distinguish a fresh incremental refresh from a fresh *deploy* of a stale file, and this
+      // file is served from the deployed bundle rather than read from the chain.
+      scannedToBlock: report.scannedToBlock ?? null,
+      scanMode: report.scanMode ?? null,
       liveErc20Approvals: report.erc20Live.length,
       livePermit2Grants: report.permit2Live.length,
       approvals: report.erc20Live,

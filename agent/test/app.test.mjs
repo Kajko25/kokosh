@@ -284,3 +284,14 @@ test("csp violation reports are logged and answered 204", async () => {
   assert.equal(logged.length, 1);
   assert.match(logged[0], /connect-src blocked https:\/\/keys\.coinbase\.com/);
 });
+
+test("exposure reports the block the snapshot reached, not just its age", async () => {
+  // Age alone cannot tell a fresh incremental refresh from a fresh deploy of a stale file --
+  // /exposure serves a committed snapshot, not a live read.
+  const { status, body } = await get(makeApp({ holdings: stubHoldings() }), "/exposure");
+
+  assert.equal(status, 200);
+  assert.ok(body.scannedToBlock, "the anchor is reported");
+  assert.equal(body.scanMode, "incremental");
+  assert.equal(body.stale, false);
+});
