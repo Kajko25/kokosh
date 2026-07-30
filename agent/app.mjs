@@ -28,6 +28,8 @@ const cachedHoldings = () => holdingsCache.get(() => fetchTokenHoldings(WALLET))
 const nftCache = createTtlCache({ ttlMs: 60_000 });
 const cachedNfts = () => nftCache.get(() => fetchNftHoldings(WALLET));
 
+export const LIVE_HOLDINGS = { tokens: cachedHoldings, nfts: cachedNfts };
+
 /**
  * Classify every holding, across all three token standards.
  *
@@ -35,9 +37,12 @@ const cachedNfts = () => nftCache.get(() => fetchNftHoldings(WALLET));
  * down. "Scanned 149 tokens, nothing new" reads as an all-clear, and a partial scan that looks
  * complete is this agent's characteristic failure — it is how ERC-20 pagination hid a third of
  * the holdings and how ERC-721/1155 went unscanned entirely.
+ *
+ * `sources` is a seam, not a feature: the live pair reads cached Blockscout walks, and tests
+ * pass fixtures so the endpoints built on this can be exercised without the network.
  */
-async function scanHoldings() {
-  const [tokens, nfts] = await Promise.all([cachedHoldings(), cachedNfts()]);
+export async function scanHoldings(sources = LIVE_HOLDINGS) {
+  const [tokens, nfts] = await Promise.all([sources.tokens(), sources.nfts()]);
   const all = [...tokens, ...nfts];
   const classified = all.map((token) => ({ ...token, standard: token.standard || "ERC-20", ...classifyToken(token) }));
 
@@ -54,8 +59,8 @@ async function scanHoldings() {
 const flaggedForReport = (flagged) =>
   flagged.map(({ address, name, symbol, standard, reasons }) => ({ address, name, symbol, standard, reasons }));
 
-async function computeAudit() {
-  const [report, holdings] = await Promise.all([readExposureReport(), scanHoldings()]);
+async function computeAudit(sources) {
+  const [report, holdings] = await Promise.all([readExposureReport(), scanHoldings(sources)]);
   const { flagged } = holdings;
   const liveApprovals = report ? report.erc20Live.length + report.permit2Live.length : 0;
   return {
@@ -94,7 +99,17 @@ export function resolveAuditMode({ cdp, allowUnpaidAudit = false } = {}) {
   return allowUnpaidAudit ? "unpaid" : "unavailable";
 }
 
-export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit = false, authRateLimit } = {}) {
+export function makeApp({
+  client,
+  now = () => Date.now(),
+  cdp,
+  allowUnpaidAudit = false,
+  authRateLimit,
+  // Injectable so /drops and /audit can be tested at all. Until now the only path to the
+  // holdings was a module-level cached fetch against live Blockscout, which is why the two
+  // endpoints that carry this agent's actual product had no tests.
+  holdings = LIVE_HOLDINGS,
+} = {}) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json());
@@ -210,7 +225,7 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
   app.get("/drops", async (req, res) => {
     res.set("Cache-Control", "public, max-age=1800");
     try {
-      const { scannedTokens, scannedByStandard, flagged } = await scanHoldings();
+      const { scannedTokens, scannedByStandard, flagged } = await scanHoldings(holdings);
       res.json({
         wallet: WALLET,
         scannedTokens,
@@ -226,7 +241,7 @@ export function makeApp({ client, now = () => Date.now(), cdp, allowUnpaidAudit 
   app.get("/audit", async (req, res) => {
     res.set("Cache-Control", "no-store");
     try {
-      res.json(await computeAudit());
+      res.json(await computeAudit(holdings));
     } catch (err) {
       failure(res, { status: 502, code: "audit_unavailable", error: err });
     }

@@ -151,3 +151,88 @@ test("security headers are set on every response", async () => {
   // Still required by the Base Account popup flows the public/ pages use.
   assert.equal(res.headers.get("cross-origin-opener-policy"), "same-origin-allow-popups");
 });
+
+// The holdings seam. Before it existed, /drops and /audit — the endpoints carrying this
+// agent's actual product, one of them paid — could only be exercised against live Blockscout,
+// so neither had a single test.
+const TOKENS = [
+  { address: "0xaaa", name: "Mirmil", symbol: "MIR", balance: "1", standard: "ERC-20" },
+  { address: "0xbbb", name: "Claim: https://aerodrome.supply", symbol: "AERO", balance: "1", standard: "ERC-20" },
+];
+const NFTS = [
+  { address: "0xccc", name: "Waymarks", symbol: "WAYMARK", standard: "ERC-721", instanceCount: 3 },
+  { address: "0xddd", name: "HYPERLIQUID REWARD", symbol: "HL", standard: "ERC-1155", instanceCount: 1 },
+  { address: "0xeee", name: "[ #181 ] Scan the QR to get a reward", symbol: "QR", standard: "ERC-1155", instanceCount: 1 },
+];
+const stubHoldings = (tokens = TOKENS, nfts = NFTS) => ({ tokens: async () => tokens, nfts: async () => nfts });
+
+async function get(app, path) {
+  const server = await listen(app);
+  try {
+    const res = await fetch(`http://localhost:${server.address().port}${path}`);
+    return { status: res.status, body: await res.json() };
+  } finally {
+    server.close();
+    server.closeAllConnections?.();
+  }
+}
+
+test("drops counts every standard and labels each finding with its own", async () => {
+  const { status, body } = await get(makeApp({ holdings: stubHoldings() }), "/drops");
+
+  assert.equal(status, 200);
+  assert.equal(body.scannedTokens, 5);
+  assert.deepEqual(body.scannedByStandard, { "ERC-20": 2, "ERC-721": 1, "ERC-1155": 2 });
+  assert.equal(body.flaggedCount, 3);
+  assert.deepEqual(
+    body.flagged.map((f) => [f.standard, f.symbol]),
+    [["ERC-20", "AERO"], ["ERC-1155", "HL"], ["ERC-1155", "QR"]]
+  );
+});
+
+test("drops reports every reason a finding was flagged for, not just the first", async () => {
+  const { body } = await get(makeApp({ holdings: stubHoldings() }), "/drops");
+  const qr = body.flagged.find((f) => f.symbol === "QR");
+  assert.deepEqual(qr.reasons.sort(), ["qr_code_lure", "reward_language"]);
+});
+
+test("a clean wallet reports zero findings rather than an empty scan", async () => {
+  const { body } = await get(makeApp({ holdings: stubHoldings([TOKENS[0]], [NFTS[0]]) }), "/drops");
+  assert.equal(body.scannedTokens, 2);
+  assert.equal(body.flaggedCount, 0);
+  assert.deepEqual(body.flagged, []);
+});
+
+test("drops fails loudly when the NFT walk is down, rather than serving the ERC-20 half", async () => {
+  // A partial scan presented as complete reads as an all-clear. This is the failure mode that
+  // hid a third of this wallet's tokens once already.
+  const holdings = { tokens: async () => TOKENS, nfts: async () => { throw new Error("blockscout 503"); } };
+  const { status, body } = await get(makeApp({ holdings }), "/drops");
+
+  assert.equal(status, 502);
+  assert.equal(body.error, "holdings_unavailable");
+  assert.equal("flaggedCount" in body, false, "no partial result may leak into a failure response");
+});
+
+test("the paid audit carries the scam section with per-standard counts", async () => {
+  const app = makeApp({ holdings: stubHoldings(), allowUnpaidAudit: true });
+  const { status, body } = await get(app, "/audit");
+
+  assert.equal(status, 200);
+  assert.equal(body.wallet, "0x2984Bb4953cfCE2cEc957388BE686D6c38779234");
+  assert.equal(body.scamAirdrops.scannedTokens, 5);
+  assert.deepEqual(body.scamAirdrops.scannedByStandard, { "ERC-20": 2, "ERC-721": 1, "ERC-1155": 2 });
+  assert.equal(body.scamAirdrops.flaggedCount, 3);
+  assert.equal(typeof body.hygieneScore, "number");
+});
+
+test("an audit whose holdings scan fails is a 502, not a report with an empty scam section", async () => {
+  // The 202-shaped failure this agent shipped once: a legitimate-looking response that reports
+  // nothing found because nothing was looked at. A paid endpoint must not do that.
+  const holdings = { tokens: async () => { throw new Error("blockscout 500"); }, nfts: async () => [] };
+  const { status, body } = await get(makeApp({ holdings, allowUnpaidAudit: true }), "/audit");
+
+  assert.equal(status, 502);
+  assert.equal(body.error, "audit_unavailable");
+  assert.equal("hygieneScore" in body, false);
+});
