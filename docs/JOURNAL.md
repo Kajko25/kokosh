@@ -376,10 +376,15 @@ Not tracked by the audit but worth remembering: Stage 7's Solana return leg need
     not a freshness signal for this endpoint: it moves whenever the file is rewritten, so it
     cannot tell a real refresh from a fresh **deploy** of an old snapshot. The anchor can be
     compared against the chain tip.
-  - Historical caveat kept in view: the pre-2026-07-30 history was never scanned for `Permit`
-    events, since the full scan that established the anchor predates that event being included.
-    Closing that properly means one `--full` run (~50 min, now 3 events); the incremental path
-    covers everything from the anchor forward.
+  - **Historical caveat closed the same day, and it was not theoretical.** A `--full` run over
+    all 4,932 chunks found **6 Permit2 `Permit` events** against **1 `Approval`** — so six of the
+    seven Permit2 grants this wallet ever made were by signature, i.e. the dominant path was the
+    one the scanner never looked at. None are currently live (0 live Permit2 grants), so no
+    exposure was being under-reported today, but the earlier "hole closed rather than miss fixed"
+    framing was too generous to the old code: had any of those six still been live, they would
+    have been missed. The ~237k-block sample that showed zero was simply too recent.
+  - Full scan result otherwise unchanged: 351 ERC-20 Approval events, 120 unique pairs re-read,
+    still exactly one live approval (WETH → Aave v3 Pool). Anchor now 49317151, scanMode full.
   - 13 tests; suite 201 → 214. Verified live: 8 chunks, no new events, the one known live pair
     (WETH → Aave v3 Pool, ~$0.04) carried forward and re-read as still live, `/exposure` back to
     `stale: false`.
