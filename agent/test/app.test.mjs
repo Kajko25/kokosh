@@ -251,3 +251,36 @@ test("sentinel reports the cycle's age and whether it is overdue", async () => {
 test("the agent card advertises the sentinel endpoint", () => {
   assert.equal(agentCard().endpoints.sentinel, "/sentinel");
 });
+
+test("a report-only CSP is sent, so it cannot break a working sign-in flow", async () => {
+  const server = await listen(makeApp({ holdings: stubHoldings() }));
+  const res = await fetch(`http://localhost:${server.address().port}/healthz`).catch(() => null);
+  const policy = res?.headers.get("content-security-policy-report-only");
+  server.close();
+  server.closeAllConnections?.();
+
+  assert.ok(policy, "the header is present");
+  assert.equal(res.headers.get("content-security-policy"), null, "enforcing mode is deliberately not set yet");
+  assert.match(policy, /script-src [^;]*https:\/\/esm\.sh/, "the pages import the SDK from esm.sh");
+  assert.match(policy, /object-src 'none'/);
+  assert.match(policy, /report-uri \/csp-report/);
+});
+
+test("csp violation reports are logged and answered 204", async () => {
+  const logged = [];
+  const app = makeApp({ holdings: stubHoldings(), cspLog: (m) => logged.push(m) });
+  const server = await listen(app);
+  const res = await fetch(`http://localhost:${server.address().port}/csp-report`, {
+    method: "POST",
+    headers: { "content-type": "application/csp-report" },
+    body: JSON.stringify({
+      "csp-report": { "document-uri": "https://kokosh-agent.vercel.app/signin.html", "violated-directive": "connect-src", "blocked-uri": "https://keys.coinbase.com" },
+    }),
+  });
+  server.close();
+  server.closeAllConnections?.();
+
+  assert.equal(res.status, 204);
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /connect-src blocked https:\/\/keys\.coinbase\.com/);
+});

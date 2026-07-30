@@ -18,6 +18,20 @@ import { readSentinelReport } from "./lib/sentinelReport.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const WALLET = "0x2984Bb4953cfCE2cEc957388BE686D6c38779234";
+const CSP_REPORT_ONLY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://esm.sh",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "connect-src 'self' https:",
+  "frame-src https:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+  "report-uri /csp-report",
+].join("; ");
+
 const SENTINEL_STATE_PATH = fileURLToPath(new URL("./data/sentinel-state.json", import.meta.url));
 const MAX_LAG_SECONDS = 60;
 
@@ -111,10 +125,13 @@ export function makeApp({
   // holdings was a module-level cached fetch against live Blockscout, which is why the two
   // endpoints that carry this agent's actual product had no tests.
   holdings = LIVE_HOLDINGS,
+  cspLog = console.warn,
 } = {}) {
   const app = express();
   app.disable("x-powered-by");
-  app.use(express.json());
+  // application/csp-report is the type browsers post violations as; without it the body would
+  // arrive unparsed and every report would log as empty.
+  app.use(express.json({ type: ["application/json", "application/csp-report", "application/reports+json"] }));
   app.use((req, res, next) => {
     // Needed for the Base Account popup flows the pages under public/ rely on.
     res.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
@@ -126,11 +143,19 @@ export function makeApp({
     res.set("X-Frame-Options", "DENY");
     res.set("Referrer-Policy", "strict-origin-when-cross-origin");
 
-    // Deliberately no Content-Security-Policy. The pages import the Base Account SDK and viem
-    // from esm.sh and hand off to Coinbase-hosted signing, so a correct policy needs
-    // verification in a real browser against a real wallet flow. This environment has no
-    // headless browser (missing libnspr4), and shipping an unverified CSP would risk breaking
-    // sign-in flows that are known to work. Left as a documented gap rather than a guess.
+    // CSP was left off entirely because a wrong one silently breaks wallet sign-in, and there
+    // is no browser here to verify a policy against a real signing flow. Report-Only resolves
+    // that standoff instead of waiting for one: it cannot block anything, so it cannot break
+    // sign-in, and every violation the real pages produce gets posted to /csp-report — turning
+    // an unverifiable guess into a measurement taken from actual use.
+    //
+    // The tight directives already mean something: no plugins, no <base> hijack, no form posts,
+    // and no framing. The loose ones (connect-src, frame-src) are placeholders — the Base
+    // Account SDK reaches Coinbase-hosted endpoints that cannot be enumerated from here, and
+    // the reports are how they get enumerated. script/style need 'unsafe-inline' because the
+    // pages carry inline <script type="module"> and <style> blocks and are served straight off
+    // the CDN, where a per-response nonce is not available.
+    res.set("Content-Security-Policy-Report-Only", CSP_REPORT_ONLY);
     next();
   });
   app.use(express.static(join(__dirname, "public")));
@@ -226,6 +251,16 @@ export function makeApp({
 
   // The daily cycle stopped once and nothing surfaced it: a stand-down and a dead cron look
   // identical from outside. This makes the last run's age readable by a monitor.
+  // Collects what the Report-Only policy above observes. Logged, not stored: the point is to
+  // learn which hosts the wallet flows actually touch before any policy is enforced.
+  app.post("/csp-report", (req, res) => {
+    const report = req.body?.["csp-report"] ?? req.body ?? {};
+    const blocked = report["blocked-uri"] ?? report.blockedURL ?? "unknown";
+    const directive = report["violated-directive"] ?? report.effectiveDirective ?? "unknown";
+    cspLog(`csp-report: ${directive} blocked ${blocked} on ${report["document-uri"] ?? report.documentURL ?? "unknown"}`);
+    res.status(204).end();
+  });
+
   app.get("/sentinel", async (req, res) => {
     res.set("Cache-Control", "public, max-age=300");
     const report = await readSentinelReport({ path: SENTINEL_STATE_PATH, now });
