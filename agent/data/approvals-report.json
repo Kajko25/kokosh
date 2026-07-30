@@ -1,6 +1,8 @@
 {
   "owner": "0x2984Bb4953cfCE2cEc957388BE686D6c38779234",
-  "scannedAt": "2026-07-28T23:38:32.563Z",
+  "scannedAt": "2026-07-30T13:58:27.383Z",
+  "scannedToBlock": "49315273",
+  "scanMode": "incremental",
   "erc20Live": [
     {
       "token": "0x4200000000000000000000000000000000000006",
