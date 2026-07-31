@@ -1,12 +1,12 @@
 {
-  "publishedAt": "2026-07-30T23:30:13Z",
+  "publishedAt": "2026-07-31T12:51:53Z",
   "outcome": "clean",
   "exitCode": 0,
   "newFindings": 0,
-  "lastRunAt": "2026-07-30T23:30:13.051Z",
-  "lastScannedBlock": "49332431",
+  "lastRunAt": "2026-07-31T12:51:53.363Z",
+  "lastScannedBlock": "49356479",
   "knownFlaggedTokens": 63,
   "detectorFingerprint": "fb9e99a705d8",
-  "codeCommit": "322d2fcf3d2fad9345b6defbf86054f758786a89",
+  "codeCommit": "f5761709e79bc94c42f073594a0bca13be326459",
   "host": "DESKTOP-H3DGP64"
 }
