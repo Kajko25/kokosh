@@ -1,0 +1,51 @@
+name: audit smoke
+
+# Checks the deployed /audit still challenges for the right payment.
+#
+# The test suite cannot catch this class of problem: it proves the code charges correctly, while
+# what breaks in production is configuration. Missing CDP keys turn the paid endpoint into a 503,
+# ALLOW_UNPAID_AUDIT=1 serves the report free, and a wrong payTo would route real money elsewhere
+# with every test still green. The challenge itself shows all three.
+#
+# Manual only. Not on push: this talks to the live deployment, and a check that runs before the
+# deploy it is checking would report on the previous version. Not on a schedule either -- a
+# recurring unauthenticated GET against the agent's own paid endpoint is noise in its logs for
+# no added signal, since the terms only change when someone changes them here.
+#
+# It never pays. One unauthenticated GET, exactly what any client's first request looks like; a
+# real purchase needs the Ledger and stays manual.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Audit endpoint to check"
+        required: false
+        default: "https://kokosh-agent.vercel.app/audit"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: agent
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      - run: npm ci
+
+      # The expected terms come from lib/x402Seller.mjs, the same module the middleware charges
+      # with, so this compares the deployment against this repo rather than against a copy of the
+      # values that could drift out of step with both.
+      - name: Payment terms match this repo
+        run: node scripts/smoke-audit.mjs "${{ inputs.url }}"

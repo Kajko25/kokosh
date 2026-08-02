@@ -13,7 +13,9 @@ import { failure } from "./lib/httpError.mjs";
 import { createRateLimiter, rateLimitMiddleware } from "./lib/rateLimit.mjs";
 import { createTtlCache } from "./lib/cache.mjs";
 import { computeHygieneScore } from "./lib/hygieneScore.mjs";
+import { findSymbolCollisions } from "./lib/symbolCollisions.mjs";
 import { readSentinelReport } from "./lib/sentinelReport.mjs";
+import { describeInheritedExposure } from "./lib/inheritedExposure.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -70,6 +72,9 @@ export async function scanHoldings(sources = LIVE_HOLDINGS) {
     scannedTokens: classified.length,
     scannedByStandard,
     flagged: classified.filter((t) => t.suspicious),
+    // Computed over everything held, flagged or not: the whole point is that a clean-looking
+    // contract sharing a ticker with another one is the finding.
+    symbolCollisions: findSymbolCollisions(classified),
   };
 }
 
@@ -94,6 +99,9 @@ async function computeAudit(sources) {
       scannedByStandard: holdings.scannedByStandard,
       flaggedCount: flagged.length,
       flagged: flaggedForReport(flagged),
+      // Reported alongside the verdicts rather than folded into them, and deliberately absent
+      // from hygieneScore: a shared ticker says at most one claimant is genuine, not which.
+      symbolCollisions: holdings.symbolCollisions,
     },
     ...computeHygieneScore({ report, flaggedCount: flagged.length }),
   };
@@ -126,6 +134,10 @@ export function makeApp({
   // endpoints that carry this agent's actual product had no tests.
   holdings = LIVE_HOLDINGS,
   cspLog = console.warn,
+  // Same reasoning as `holdings`: the paid path is the agent's product, and without a seam the
+  // only way to exercise it is a real USDC purchase signed on the Ledger. Production leaves it
+  // unset and gets the CDP-backed facilitator.
+  facilitatorClient,
 } = {}) {
   const app = express();
   app.disable("x-powered-by");
@@ -163,7 +175,7 @@ export function makeApp({
   const auditMode = resolveAuditMode({ cdp, allowUnpaidAudit });
 
   if (auditMode === "paid") {
-    app.use(buildAuditPaymentMiddleware({ cdpApiKeyId: cdp.apiKeyId, cdpApiKeySecret: cdp.apiKeySecret }));
+    app.use(buildAuditPaymentMiddleware({ cdpApiKeyId: cdp.apiKeyId, cdpApiKeySecret: cdp.apiKeySecret, facilitatorClient }));
   } else if (auditMode === "unavailable") {
     // Registered here, ahead of the GET /audit handler below, so it intercepts rather than
     // falling through to the free report.
@@ -273,19 +285,28 @@ export function makeApp({
       res.status(202).json({ status: "no_sentinel_state", wallet: WALLET });
       return;
     }
-    res.json({ wallet: WALLET, ...report });
+
+    // What the cycle covers, stated next to how recently it ran. A forward-only scan cannot see
+    // allowances that predate its baseline, so "not overdue" on its own overstates the guarantee
+    // -- the daily cycle can be perfectly healthy and still be watching none of the live
+    // exposure. Reading the snapshot here is cheap: it is a committed file, already deployed.
+    const exposureSnapshot = await readExposureReport();
+    const inheritedExposure = describeInheritedExposure(exposureSnapshot, { alertedApprovals: report.alertedApprovals });
+
+    res.json({ wallet: WALLET, ...report, inheritedExposure });
   });
 
   app.get("/drops", async (req, res) => {
     res.set("Cache-Control", "public, max-age=1800");
     try {
-      const { scannedTokens, scannedByStandard, flagged } = await scanHoldings(holdings);
+      const { scannedTokens, scannedByStandard, flagged, symbolCollisions } = await scanHoldings(holdings);
       res.json({
         wallet: WALLET,
         scannedTokens,
         scannedByStandard,
         flaggedCount: flagged.length,
         flagged: flaggedForReport(flagged),
+        symbolCollisions,
       });
     } catch (err) {
       failure(res, { status: 502, code: "holdings_unavailable", error: err });

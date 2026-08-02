@@ -1,6 +1,6 @@
 {
-  "lastScannedBlock": "49442520",
-  "lastRunAt": "2026-08-02T12:40:09.434Z",
+  "lastScannedBlock": "49444505",
+  "lastRunAt": "2026-08-02T13:46:16.213Z",
   "alertedApprovals": [],
   "knownFlaggedTokens": [
     "0x125a7410ea1ca56c1d18e4d6bb442627800bc9dd",
@@ -65,8 +65,27 @@
     "0x82deeb30578dadc35c49487105a98d3ca7440d2e",
     "0x352c1760223770aad8da8b6c6640c8dda911a5de",
     "0xd9f0644eb3bd8e51f66c18a7a5e8c599fc9fb913",
-    "0xef6bed0f6c64708b01ba691e1081656489dd304a"
+    "0xef6bed0f6c64708b01ba691e1081656489dd304a",
+    "0x36e9810f636d10e9e37a6e17b72ddc2265194d42",
+    "0x8a7e4685bf660ef5bea2d52cdef580581294577e",
+    "0x6de2c3b1c6bf511a918eec519ecaa61304bb49d6",
+    "0xb97845b3029dd89de9cee356fdfb4f8ae840b663",
+    "0xd96c120b474eedec086d60358f98dfe51b420d2b",
+    "0x725bd49dcb10d7f3a9563348de0238920d237941",
+    "0x0bf43486ba5b80c0ff742d5e31576abc63d8c0e8",
+    "0x7870bf33b34aac95f361ff7dec3b250746f63049",
+    "0x085b6ea3ba545fe58e05fcbba28b57bf853875cb",
+    "0x2b225125765ecbbc4d4e4d2674f92e43c6340331",
+    "0x41c1bfd7ddd9d8de1a843090db615eaa45e16210",
+    "0x6e9406b7ec81ca075600faab5283934bc2a5bf82",
+    "0x082c99dbdfc3809b5ecea22e30d94b065ed781ff",
+    "0x486f662020286e17e7469df4e5f2cf2415f36662",
+    "0xf0d391f2c145621679e5edc77133a416138c8bbc",
+    "0xcf87a3f639b12a99f29caf14287c640ef1c2a5c1",
+    "0x51a9ab0f7ed36dee8dab0b1a83f7de76d74934d6",
+    "0xbcd9b58c1ea294b4530efb0ec5e4c91648155806",
+    "0x91139e10899c7f38678cf370555d688d957b2c8f"
   ],
   "baselineNote": "knownFlaggedTokens re-baselined automatically on 2026-07-30, when the detector fingerprint in this file (absent) disagreed with the running ruleset (fb9e99a705d8) after NFT scanning and six new rules took the flagged count from 32 to 63. Those collections were always held; only the scanner's field of view changed. Earlier re-seedings (2026-07-29, after the pagination fix and the bare-domain rule) were done by hand after a human noticed — lib/tokenFindings.mjs now enforces it instead. The governing rule is unchanged: EAS attestations record changes in the wallet, git records changes in the detector.",
-  "detectorFingerprint": "fb9e99a705d8"
+  "detectorFingerprint": "d65a5939e75e"
 }

@@ -59,6 +59,58 @@ const MONEY_PATTERN = new RegExp(
 // Common Latin-lookalike confusable ranges (Cyrillic, Greek) that show up in ticker spoofing.
 const HOMOGLYPH_PATTERN = /[Ѐ-ӿͰ-Ͽ]/;
 
+// The largest unflagged cluster in this wallet, and it is a single campaign: tokens borrowing
+// the authority of a state or central bank. "Global Digital Oil Reserve", "Official Saudi Oil
+// Reserve", "Peace Federal Reserve", "VANGUARD DIGITAL RESERVE", "GUARD OIL RESERVE US",
+// "United States Digital Oil Reserve", "Reserve Oil On Trump" and half a dozen more, none of
+// which any other rule sees -- no domain, no urgency verb, no cash sum, no confusable.
+//
+// Both halves are required, and that is the whole design. "Reserve" alone is a normal English
+// word and appears in holdings that are not this campaign; the pairing with a sovereign or
+// commodity qualifier is what makes it a claim of official backing. Two names deliberately do
+// NOT match: "Based USA" (a memecoin, no reserve claim) and "U. S. ZORA RESERVE" (already
+// treated as legitimate elsewhere in this file), so the narrow rule leaves both alone where a
+// broad one would have flagged them.
+const RESERVE_WORD = /\breserves?\b/i;
+const RESERVE_QUALIFIER = /\b(oil|federal|digital|treasury|military|strategic|gold|sovereign|petroleum)\b/i;
+// The same campaign without the word "reserve": "UNITED NATIONS OIL SUPPLY", "Nation America
+// Trump Oil". A supranational name attached to a commodity is the same borrowed authority.
+const STATE_BODY = /\b(united states|united nations|nation america)\b/i;
+const STATE_COMMODITY = /\b(oil|reserves?|supply|petroleum)\b/i;
+
+const impersonatesAStateReserve = (text) =>
+  (RESERVE_WORD.test(text) && RESERVE_QUALIFIER.test(text)) ||
+  (STATE_BODY.test(text) && STATE_COMMODITY.test(text));
+
+// AI labs that have never issued a token, sitting unflagged in this wallet as "OpenAI",
+// "openAI", "Open AI", "DeepSeek" and "GPT" twice over. The claim these make is not urgency or
+// a prize -- it is simply being someone else, and no other rule looks for that.
+//
+// Matched on the WHOLE normalised name or symbol, never as a substring, and that is what keeps
+// it safe: "MikeAI", "Gizai coin" and "Art by Virtuals" are real holdings that a contains-check
+// would flag. Normalisation folds case and drops non-alphanumerics, so "Open AI", "open-ai" and
+// "OPENAI" all collapse to the same string -- spacing is the cheapest possible evasion and the
+// one these names already use.
+//
+// The list is deliberately short and only names labs whose absence from every chain is a matter
+// of public record. A brand that might legitimately ship a token later does not belong here:
+// the cost of a wrong entry is flagging a real project, which is how a detector loses its reader.
+const IMPERSONATED_AI_BRANDS = new Set([
+  "openai",
+  "chatgpt",
+  "gpt",
+  "deepseek",
+  "anthropic",
+  "claude",
+  "midjourney",
+  "copilot",
+  "perplexity",
+]);
+
+const normaliseBrand = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+const impersonatesAnAiBrand = (name, symbol) =>
+  IMPERSONATED_AI_BRANDS.has(normaliseBrand(name)) || IMPERSONATED_AI_BRANDS.has(normaliseBrand(symbol));
+
 // Canonical Base mainnet contract addresses for well-known tickers, so an exact ticker
 // match from an unlisted contract gets flagged instead of trusted at face value. Found via
 // a real miss: a token in this wallet at 0x9053A44f...554888eD3 is symbol/name "AAVE"/"AAVE"
@@ -109,6 +161,8 @@ export const RULE_IDS = [
   "qr_code_lure",
   "pressure_language",
   "non_latin_homoglyph",
+  "impersonates_a_state_reserve",
+  "impersonates_an_ai_brand",
   ...Object.keys(KNOWN_TICKER_ADDRESSES).map((ticker) => `impersonates_${ticker}`),
 ];
 
@@ -157,6 +211,12 @@ export function classifyToken({ name = "", symbol = "", address = "" }) {
   }
   if (HOMOGLYPH_PATTERN.test(name) || HOMOGLYPH_PATTERN.test(symbol)) {
     reasons.push("non_latin_homoglyph");
+  }
+  if (impersonatesAStateReserve(name) || impersonatesAStateReserve(symbol)) {
+    reasons.push("impersonates_a_state_reserve");
+  }
+  if (impersonatesAnAiBrand(name, symbol)) {
+    reasons.push("impersonates_an_ai_brand");
   }
 
   const upperSymbol = symbol.toUpperCase().trim();

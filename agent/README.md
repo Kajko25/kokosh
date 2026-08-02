@@ -23,6 +23,9 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `lib/blockscout.mjs` | holdings via Blockscout v2, paginated: `fetchTokenHoldings` (ERC-20) and `fetchNftHoldings` (ERC-721 + ERC-1155, folded per collection) |
 | `lib/exposure.mjs` | reads the committed approval snapshot from `data/` |
 | `lib/x402Seller.mjs` | x402 payment middleware for `/audit` |
+| `lib/auditMode.mjs` | decides paid vs free vs fail-closed for `/audit` from the environment |
+| `lib/configuredApp.mjs` | the single env-to-app wiring shared by `server.mjs`, `api/index.js` and `app.mjs`'s default export |
+| `lib/nonce.mjs` | stateless HMAC sign-in nonces (issue + verify) |
 | `lib/payValidate.mjs` | Base Pay `dataCallback` payer-info validation |
 | `lib/siwb.mjs` | Sign In With Base nonce issue + signature verification |
 | `lib/rangeScan.mjs` | block-range windowing and rate-limit retry for the sentinel |
@@ -39,6 +42,7 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `scripts/sentinel-run.mjs` | the autonomous check (see [Sentinel](#sentinel)) |
 | `scripts/sentinel-cron.sh` | jitter / stand-down / daily-cap wrapper around it |
 | `scripts/sentinel-heartbeat.sh` | publishes each cycle's outcome to the `sentinel-heartbeat` branch |
+| `scripts/publish-state.sh` | pushes `data/` to `main` after a clean cycle, so the deployed agent sees it |
 | `scripts/pay-audit.mjs` | x402 *buyer* — pays another service, proving the other side of the flow |
 | `scripts/calibrate-heuristics.mjs` | runs the rules over live holdings and prints what fired — how rule changes are judged |
 | `data/approvals-report.json` | committed approval snapshot served by `/exposure` |
@@ -187,6 +191,15 @@ Priced at **$0.01 USDC on Base** (`eip155:8453`, x402 `exact` scheme), paid to t
 agent wallet `0xf2035170A3B5106DBD4c98853D3C9E52c77eA4E6` — deliberately not the Ledger-held
 main wallet, so receiving payments never needs hardware present.
 
+**Paying it.** An unpaid request answers `402` with a base64 JSON `payment-required` header whose
+`accepts[0]` carries `amount` (`"10000"` — $0.01 at USDC's six decimals), `asset` (native USDC
+`0x8335…2913`), `payTo`, and the EIP-712 domain to sign under (`extra`). Sign an EIP-3009
+`TransferWithAuthorization` for that and resubmit under the **`payment-signature`** header —
+**not `X-PAYMENT`**, which is the x402 v1 name this endpoint does not answer to. That distinction
+is worth stating because it fails silently: an unrecognised header is not an error, it reads as
+an unpaid request, so a client using the old name sees `402` forever with nothing to explain why.
+`test/auditPurchase.test.mjs` drives the whole loop with a throwaway key, and pins both names.
+
 **Payment configuration is fail-closed.** `/audit` has three modes, resolved at startup by
 `resolveAuditMode()`:
 
@@ -220,6 +233,19 @@ a dead cron produce identical silence, which is the reason this endpoint exists.
 
 A missing or unparseable `lastRunAt` reports `overdue: true`. Absence of evidence is not
 evidence of a recent run, and the reassuring answer is the wrong default here.
+
+`inheritedExposure` reports **what the cycle covers**, alongside how recently it ran:
+`live`, `monitored`, `inheritedCount`, and the inherited entries themselves. The two are
+routinely confused — `overdue: false` says the cycle ran, and gets read as saying the wallet is
+watched. It is not the same claim. The sentinel scans forward from `lastScannedBlock`, so any
+allowance already live when the baseline was seeded emitted its `Approval` before every window
+it will ever read; `alertedApprovals` stays empty and would however long the cron ran.
+
+The live `WETH -> 0xA238Dd80…` allowance (Aave v3 Pool, left from a July 23 borrow/repay whose
+cleanup missed it) is exactly that case: real, in the snapshot, and invisible to the daily
+cycle. **The incremental scan catches new exposure; only a full `scan-approvals.mjs --full`
+catches inherited exposure.** They are complementary, and the response now says so rather than
+leaving it to be inferred from the design.
 
 ### `GET /.well-known/agent-card.json`
 
@@ -309,6 +335,8 @@ any rule fires:
 | `qr_code_lure` | asks to be scanned (`SCAN ME`, `Scan the QR…`) — the destination is in an image, not the text |
 | `pressure_language` | `don't miss` / `last chance` / `hurry` / `limited time` / `act now` |
 | `non_latin_homoglyph` | name or symbol contains Cyrillic or Greek confusables |
+| `impersonates_a_state_reserve` | claims sovereign or central-bank backing (`Global Digital Oil Reserve`, `Peace Federal Reserve`) |
+| `impersonates_an_ai_brand` | the whole name or symbol *is* an AI lab that has never issued a token (`OpenAI`, `DeepSeek`, `GPT`) |
 | `impersonates_<TICKER>` | symbol matches a known ticker but the contract is **not** its canonical address |
 
 Rules 2–7 all came from reading the wallet's own 274 collections rather than from imagining what
@@ -324,6 +352,13 @@ a scam looks like:
   that needed it (`cakesv4.finance`) is caught by ticker impersonation instead.
 - `quotes_a_cash_amount` requires grouped thousands or a currency word. The looser version — any
   `$` near digits — flagged `EIP-4844 is Based`, whose symbol is `$4844`.
+- `impersonates_a_state_reserve` is a **conjunction**, not a word list: `reserve` plus a
+  sovereign or commodity qualifier. Thirteen holdings match; `Based USA` and `U. S. ZORA RESERVE`
+  deliberately do not, and a list of scary words would have taken both.
+- `impersonates_an_ai_brand` matches the **whole** normalised field, never a substring. `MikeAI`,
+  `Gizai coin` and `Art by Virtuals` are real holdings that a contains-check would flag.
+  Normalising folds case and drops non-alphanumerics, because `Open AI` is the evasion these
+  names already use.
 
 The last rule exists because of a real false negative. An earlier version compared strings only
 and required the symbol to *differ* from the known ticker before flagging — so an exact copy,
@@ -335,6 +370,22 @@ Adding a ticker to that map is the intended way to extend coverage. **Verify the
 on-chain first** (`symbol()`, `name()`, and a holder count) — a wrong entry is worse than a
 missing one, because it flags the genuine token as the impostor. The 15 entries currently there
 were each checked that way.
+
+### Ticker collisions
+
+`findSymbolCollisions(holdings)` answers a question no per-token rule can: **is another held
+contract claiming this same ticker?** `classifyToken` sees one token at a time, so whether
+`Kajko` is impersonating anything — it shares `KJK` with the owner's own `Kajko24` — is
+structurally invisible to it. `/drops` and `/audit` both carry the result.
+
+It is **reported, not accused**. No `reasons` entry, no effect on `hygieneScore`, and a test
+pins that. The wallet also holds `CustomPunks` at two addresses with nothing wrong with either,
+so a collision means *at most one* claimant owns the ticker — never which one. The existing
+rules already say which side looks like a scam; this adds the fact, not a verdict.
+
+Symbols that carry no information (`.`, `-`, empty) are skipped by default. Nine ERC-1155
+contracts here share a symbol of `.` and have nothing to do with one another; counting those
+would bury the four collisions that mean something.
 
 ### Judging a rule change
 
@@ -511,6 +562,35 @@ Reading its log: a healthy cycle ends with `run finished cleanly`, a failed one 
 `sentinel-run FAILED (exit N)`. A cycle that stops right after `sleeping Ns of jitter` and never
 reaches `jitter complete, starting scan` was killed mid-sleep — the process died, the scan
 never started.
+
+#### Publishing state
+
+A successful cycle ends by pushing `agent/data/` to `main` via
+[`scripts/publish-state.sh`](scripts/publish-state.sh), because **the cron writes state on the
+laptop and the agent reads it from the deployed bundle**. Without this step the two halves drift:
+the scan advances `sentinel-state.json` locally, `main` keeps the old copy, and `/sentinel` goes
+on reporting the previous run as `overdue` while `/exposure` reports `stale`. On 2026-08-02 that
+gap was three days wide, and it was invisible from outside — the scan had worked, the heartbeat
+said `clean`, and the agent still served July data. Staleness that comes from a *missing commit*
+rather than a missing run is the failure this closes.
+
+It publishes both `sentinel-state.json` and `approvals-report.json`, so a manual
+`scan-approvals.mjs` refresh also reaches production on the next clean cycle without anyone
+committing it by hand.
+
+Like the heartbeat, it is git plumbing only — it never touches the working tree, the index, or
+`HEAD`, so it is safe to fire while someone is mid-edit on `main`. Two properties are worth
+knowing:
+
+- **The base tree is the freshly fetched remote tip, and only the state paths are replaced in
+  it.** Local work in progress cannot reach the commit, because it is never read. This is
+  structural, not a convention.
+- **No `--force`.** A branch that moved between fetch and push means the push is refused and the
+  next cycle retries. An automated state bump must never overwrite a human's commit.
+
+Failure to publish is logged (`state publish FAILED`) and never fatal — a rejected push says
+nothing about whether the scan worked. `PUBLISH_STATE=0` skips the step entirely, for local
+testing or while someone is deliberately holding `main`.
 
 ## Development
 
