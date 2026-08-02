@@ -234,6 +234,19 @@ a dead cron produce identical silence, which is the reason this endpoint exists.
 A missing or unparseable `lastRunAt` reports `overdue: true`. Absence of evidence is not
 evidence of a recent run, and the reassuring answer is the wrong default here.
 
+`inheritedExposure` reports **what the cycle covers**, alongside how recently it ran:
+`live`, `monitored`, `inheritedCount`, and the inherited entries themselves. The two are
+routinely confused — `overdue: false` says the cycle ran, and gets read as saying the wallet is
+watched. It is not the same claim. The sentinel scans forward from `lastScannedBlock`, so any
+allowance already live when the baseline was seeded emitted its `Approval` before every window
+it will ever read; `alertedApprovals` stays empty and would however long the cron ran.
+
+The live `WETH -> 0xA238Dd80…` allowance (Aave v3 Pool, left from a July 23 borrow/repay whose
+cleanup missed it) is exactly that case: real, in the snapshot, and invisible to the daily
+cycle. **The incremental scan catches new exposure; only a full `scan-approvals.mjs --full`
+catches inherited exposure.** They are complementary, and the response now says so rather than
+leaving it to be inferred from the design.
+
 ### `GET /.well-known/agent-card.json`
 
 Agent card — name, description, wallet, endpoint map, plus:
