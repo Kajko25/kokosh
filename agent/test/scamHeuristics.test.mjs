@@ -248,3 +248,51 @@ test("the fingerprint covers the ticker map, since adding a ticker changes what 
   assert.ok(RULE_IDS.includes("impersonates_CAKE"));
   assert.ok(RULE_IDS.includes("impersonates_AAVE"));
 });
+
+// --- state-reserve impersonation ---------------------------------------------------------
+//
+// The largest cluster this detector could not see: thirteen tokens in this wallet borrowing the
+// authority of a state or central bank, none of which carried a domain, an urgency verb, a cash
+// sum or a confusable. Every name below is a real holding.
+
+test("a token claiming to be a sovereign oil reserve is flagged", () => {
+  for (const name of [
+    "Global Digital Oil Reserve",
+    "Official Saudi Oil Reserve",
+    "United States Digital Oil Reserve",
+    "GUARD OIL RESERVE US",
+    "Global Oil Military Arms Reserve",
+    "Vanguard Defens Oil Reserve",
+    "Reserve Oil On Trump",
+    "World Collective Oil Reserve",
+  ]) {
+    const result = classifyToken({ name, symbol: "X" });
+    assert.ok(result.reasons.includes("impersonates_a_state_reserve"), `${name} should be flagged`);
+  }
+});
+
+test("a token claiming central-bank backing is flagged", () => {
+  assert.ok(classifyToken({ name: "Peace Federal Reserve", symbol: "FEDERAL" }).reasons.includes("impersonates_a_state_reserve"));
+  assert.ok(classifyToken({ name: "VANGUARD DIGITAL RESERVE", symbol: "VDR" }).reasons.includes("impersonates_a_state_reserve"));
+});
+
+test("a supranational body attached to a commodity is flagged without the word reserve", () => {
+  assert.ok(classifyToken({ name: "UNITED NATIONS OIL SUPPLY", symbol: "UNOS" }).reasons.includes("impersonates_a_state_reserve"));
+  assert.ok(classifyToken({ name: "Nation America Trump Oil", symbol: "NATO" }).reasons.includes("impersonates_a_state_reserve"));
+});
+
+test("the rule needs both halves, so ordinary uses of either word are left alone", () => {
+  // Both are real holdings in this wallet, and both are why the rule is a conjunction rather
+  // than a list of scary words. A detector that flags them is one its owner stops reading.
+  assert.equal(classifyToken({ name: "Based USA", symbol: "USA" }).suspicious, false);
+  assert.equal(classifyToken({ name: "U. S. ZORA RESERVE", symbol: "USZR" }).suspicious, false);
+
+  // And the general case: neither half alone is a finding.
+  assert.equal(classifyToken({ name: "Reserve Protocol", symbol: "RSR" }).suspicious, false);
+  assert.equal(classifyToken({ name: "Digital Asset Fund", symbol: "DAF" }).suspicious, false);
+});
+
+test("the reserve rule reads the symbol too, not only the name", () => {
+  const result = classifyToken({ name: "Ordinary Name", symbol: "FEDERAL RESERVE" });
+  assert.ok(result.reasons.includes("impersonates_a_state_reserve"));
+});
