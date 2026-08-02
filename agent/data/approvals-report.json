@@ -1,8 +1,8 @@
 {
   "owner": "0x2984Bb4953cfCE2cEc957388BE686D6c38779234",
-  "scannedAt": "2026-07-30T17:34:53.763Z",
-  "scanFinishedAt": "2026-07-30T17:34:54.657Z",
-  "scannedToBlock": "49321773",
+  "scannedAt": "2026-08-02T12:40:20.612Z",
+  "scanFinishedAt": "2026-08-02T12:40:36.650Z",
+  "scannedToBlock": "49442536",
   "scanMode": "incremental",
   "erc20Live": [
     {
