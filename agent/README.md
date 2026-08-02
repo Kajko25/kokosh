@@ -191,6 +191,15 @@ Priced at **$0.01 USDC on Base** (`eip155:8453`, x402 `exact` scheme), paid to t
 agent wallet `0xf2035170A3B5106DBD4c98853D3C9E52c77eA4E6` — deliberately not the Ledger-held
 main wallet, so receiving payments never needs hardware present.
 
+**Paying it.** An unpaid request answers `402` with a base64 JSON `payment-required` header whose
+`accepts[0]` carries `amount` (`"10000"` — $0.01 at USDC's six decimals), `asset` (native USDC
+`0x8335…2913`), `payTo`, and the EIP-712 domain to sign under (`extra`). Sign an EIP-3009
+`TransferWithAuthorization` for that and resubmit under the **`payment-signature`** header —
+**not `X-PAYMENT`**, which is the x402 v1 name this endpoint does not answer to. That distinction
+is worth stating because it fails silently: an unrecognised header is not an error, it reads as
+an unpaid request, so a client using the old name sees `402` forever with nothing to explain why.
+`test/auditPurchase.test.mjs` drives the whole loop with a throwaway key, and pins both names.
+
 **Payment configuration is fail-closed.** `/audit` has three modes, resolved at startup by
 `resolveAuditMode()`:
 
