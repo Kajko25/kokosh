@@ -126,6 +126,10 @@ export function makeApp({
   // endpoints that carry this agent's actual product had no tests.
   holdings = LIVE_HOLDINGS,
   cspLog = console.warn,
+  // Same reasoning as `holdings`: the paid path is the agent's product, and without a seam the
+  // only way to exercise it is a real USDC purchase signed on the Ledger. Production leaves it
+  // unset and gets the CDP-backed facilitator.
+  facilitatorClient,
 } = {}) {
   const app = express();
   app.disable("x-powered-by");
@@ -163,7 +167,7 @@ export function makeApp({
   const auditMode = resolveAuditMode({ cdp, allowUnpaidAudit });
 
   if (auditMode === "paid") {
-    app.use(buildAuditPaymentMiddleware({ cdpApiKeyId: cdp.apiKeyId, cdpApiKeySecret: cdp.apiKeySecret }));
+    app.use(buildAuditPaymentMiddleware({ cdpApiKeyId: cdp.apiKeyId, cdpApiKeySecret: cdp.apiKeySecret, facilitatorClient }));
   } else if (auditMode === "unavailable") {
     // Registered here, ahead of the GET /audit handler below, so it intercepts rather than
     // falling through to the free report.
