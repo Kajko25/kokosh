@@ -13,6 +13,7 @@ import { failure } from "./lib/httpError.mjs";
 import { createRateLimiter, rateLimitMiddleware } from "./lib/rateLimit.mjs";
 import { createTtlCache } from "./lib/cache.mjs";
 import { computeHygieneScore } from "./lib/hygieneScore.mjs";
+import { findSymbolCollisions } from "./lib/symbolCollisions.mjs";
 import { readSentinelReport } from "./lib/sentinelReport.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -70,6 +71,9 @@ export async function scanHoldings(sources = LIVE_HOLDINGS) {
     scannedTokens: classified.length,
     scannedByStandard,
     flagged: classified.filter((t) => t.suspicious),
+    // Computed over everything held, flagged or not: the whole point is that a clean-looking
+    // contract sharing a ticker with another one is the finding.
+    symbolCollisions: findSymbolCollisions(classified),
   };
 }
 
@@ -94,6 +98,9 @@ async function computeAudit(sources) {
       scannedByStandard: holdings.scannedByStandard,
       flaggedCount: flagged.length,
       flagged: flaggedForReport(flagged),
+      // Reported alongside the verdicts rather than folded into them, and deliberately absent
+      // from hygieneScore: a shared ticker says at most one claimant is genuine, not which.
+      symbolCollisions: holdings.symbolCollisions,
     },
     ...computeHygieneScore({ report, flaggedCount: flagged.length }),
   };
@@ -283,13 +290,14 @@ export function makeApp({
   app.get("/drops", async (req, res) => {
     res.set("Cache-Control", "public, max-age=1800");
     try {
-      const { scannedTokens, scannedByStandard, flagged } = await scanHoldings(holdings);
+      const { scannedTokens, scannedByStandard, flagged, symbolCollisions } = await scanHoldings(holdings);
       res.json({
         wallet: WALLET,
         scannedTokens,
         scannedByStandard,
         flaggedCount: flagged.length,
         flagged: flaggedForReport(flagged),
+        symbolCollisions,
       });
     } catch (err) {
       failure(res, { status: 502, code: "holdings_unavailable", error: err });

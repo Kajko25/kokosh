@@ -295,3 +295,65 @@ test("exposure reports the block the snapshot reached, not just its age", async 
   assert.equal(body.scanMode, "incremental");
   assert.equal(body.stale, false);
 });
+
+// --- symbol collisions on the reporting endpoints -----------------------------------------
+
+test("/drops reports tickers claimed by more than one held contract", async () => {
+  const holdings = {
+    tokens: async () => [
+      { address: "0xB2662781", name: "Kajko24", symbol: "KJK" },
+      { address: "0x35483D56", name: "Kajko", symbol: "KJK" },
+      { address: "0xAAAA", name: "Moxie", symbol: "MOXIE" },
+    ],
+    nfts: async () => [],
+  };
+  const { status, body } = await get(makeApp({ holdings }), "/drops");
+
+  assert.equal(status, 200);
+  assert.equal(body.symbolCollisions.length, 1);
+  assert.equal(body.symbolCollisions[0].symbol, "KJK");
+  assert.deepEqual(body.symbolCollisions[0].contracts.map((c) => c.name), ["Kajko24", "Kajko"]);
+});
+
+test("a collision is reported even when no rule flagged either contract", async () => {
+  // Neither name trips anything, which is exactly why this belongs in the report: no
+  // single-token rule can see that two contracts claim one ticker.
+  const holdings = {
+    tokens: async () => [],
+    nfts: async () => [
+      { address: "0xEdee", name: "CustomPunks", symbol: "CP", standard: "ERC-721" },
+      { address: "0x78bc", name: "CustomPunks", symbol: "CP", standard: "ERC-721" },
+    ],
+  };
+  const { body } = await get(makeApp({ holdings }), "/drops");
+
+  assert.equal(body.flaggedCount, 0);
+  assert.equal(body.symbolCollisions.length, 1);
+  assert.equal(body.symbolCollisions[0].flaggedCount, 0);
+});
+
+test("/audit carries collisions without letting them move the hygiene score", async () => {
+  const withCollision = {
+    tokens: async () => [
+      { address: "0x1", name: "Kajko24", symbol: "KJK" },
+      { address: "0x2", name: "Kajko", symbol: "KJK" },
+    ],
+    nfts: async () => [],
+  };
+  const withoutCollision = {
+    tokens: async () => [
+      { address: "0x1", name: "Kajko24", symbol: "KJK" },
+      { address: "0x2", name: "Moxie", symbol: "MOXIE" },
+    ],
+    nfts: async () => [],
+  };
+
+  const collided = await get(makeApp({ holdings: withCollision, allowUnpaidAudit: true }), "/audit");
+  const clean = await get(makeApp({ holdings: withoutCollision, allowUnpaidAudit: true }), "/audit");
+
+  assert.equal(collided.body.scamAirdrops.symbolCollisions.length, 1);
+  assert.equal(clean.body.scamAirdrops.symbolCollisions.length, 0);
+  // Deliberate: a shared ticker says at most one claimant is genuine, not which one, so it is
+  // reported as a fact and never scored as a verdict.
+  assert.equal(collided.body.hygieneScore, clean.body.hygieneScore);
+});
