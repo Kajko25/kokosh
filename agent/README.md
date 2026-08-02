@@ -23,6 +23,9 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `lib/blockscout.mjs` | holdings via Blockscout v2, paginated: `fetchTokenHoldings` (ERC-20) and `fetchNftHoldings` (ERC-721 + ERC-1155, folded per collection) |
 | `lib/exposure.mjs` | reads the committed approval snapshot from `data/` |
 | `lib/x402Seller.mjs` | x402 payment middleware for `/audit` |
+| `lib/auditMode.mjs` | decides paid vs free vs fail-closed for `/audit` from the environment |
+| `lib/configuredApp.mjs` | the single env-to-app wiring shared by `server.mjs`, `api/index.js` and `app.mjs`'s default export |
+| `lib/nonce.mjs` | stateless HMAC sign-in nonces (issue + verify) |
 | `lib/payValidate.mjs` | Base Pay `dataCallback` payer-info validation |
 | `lib/siwb.mjs` | Sign In With Base nonce issue + signature verification |
 | `lib/rangeScan.mjs` | block-range windowing and rate-limit retry for the sentinel |
@@ -39,6 +42,7 @@ schedule and attests on-chain when — and only when — something genuinely cha
 | `scripts/sentinel-run.mjs` | the autonomous check (see [Sentinel](#sentinel)) |
 | `scripts/sentinel-cron.sh` | jitter / stand-down / daily-cap wrapper around it |
 | `scripts/sentinel-heartbeat.sh` | publishes each cycle's outcome to the `sentinel-heartbeat` branch |
+| `scripts/publish-state.sh` | pushes `data/` to `main` after a clean cycle, so the deployed agent sees it |
 | `scripts/pay-audit.mjs` | x402 *buyer* — pays another service, proving the other side of the flow |
 | `scripts/calibrate-heuristics.mjs` | runs the rules over live holdings and prints what fired — how rule changes are judged |
 | `data/approvals-report.json` | committed approval snapshot served by `/exposure` |
@@ -511,6 +515,35 @@ Reading its log: a healthy cycle ends with `run finished cleanly`, a failed one 
 `sentinel-run FAILED (exit N)`. A cycle that stops right after `sleeping Ns of jitter` and never
 reaches `jitter complete, starting scan` was killed mid-sleep — the process died, the scan
 never started.
+
+#### Publishing state
+
+A successful cycle ends by pushing `agent/data/` to `main` via
+[`scripts/publish-state.sh`](scripts/publish-state.sh), because **the cron writes state on the
+laptop and the agent reads it from the deployed bundle**. Without this step the two halves drift:
+the scan advances `sentinel-state.json` locally, `main` keeps the old copy, and `/sentinel` goes
+on reporting the previous run as `overdue` while `/exposure` reports `stale`. On 2026-08-02 that
+gap was three days wide, and it was invisible from outside — the scan had worked, the heartbeat
+said `clean`, and the agent still served July data. Staleness that comes from a *missing commit*
+rather than a missing run is the failure this closes.
+
+It publishes both `sentinel-state.json` and `approvals-report.json`, so a manual
+`scan-approvals.mjs` refresh also reaches production on the next clean cycle without anyone
+committing it by hand.
+
+Like the heartbeat, it is git plumbing only — it never touches the working tree, the index, or
+`HEAD`, so it is safe to fire while someone is mid-edit on `main`. Two properties are worth
+knowing:
+
+- **The base tree is the freshly fetched remote tip, and only the state paths are replaced in
+  it.** Local work in progress cannot reach the commit, because it is never read. This is
+  structural, not a convention.
+- **No `--force`.** A branch that moved between fetch and push means the push is refused and the
+  next cycle retries. An automated state bump must never overwrite a human's commit.
+
+Failure to publish is logged (`state publish FAILED`) and never fatal — a rejected push says
+nothing about whether the scan worked. `PUBLISH_STATE=0` skips the step entirely, for local
+testing or while someone is deliberately holding `main`.
 
 ## Development
 
