@@ -575,8 +575,17 @@ said `clean`, and the agent still served July data. Staleness that comes from a 
 rather than a missing run is the failure this closes.
 
 It publishes both `sentinel-state.json` and `approvals-report.json`, so a manual
-`scan-approvals.mjs` refresh also reaches production on the next clean cycle without anyone
+`scan-approvals.mjs` refresh also reaches `main` on the next clean cycle without anyone
 committing it by hand.
+
+> **Pushing is not deploying.** This project has **no automatic deploy from GitHub** — verified
+> again on 2026-08-02, when a merged PR left production still serving the previous detector
+> (`fb9e99a705d8`, 63 flagged) while `main` carried `d65a5939e75e` and 82. The agent reads its
+> state out of the bundle built at deploy time, so state on `main` becomes visible only after
+> `cd agent && npx vercel@latest --prod --yes`. This step removes the *commit* from the loop, not
+> the deploy. Until the two are connected, a cycle that publishes cleanly can still leave
+> `/sentinel` reporting stale data, and the way to tell is comparing `detector.running` against
+> the fingerprint in the repo.
 
 Like the heartbeat, it is git plumbing only — it never touches the working tree, the index, or
 `HEAD`, so it is safe to fire while someone is mid-edit on `main`. Two properties are worth

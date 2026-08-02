@@ -19,6 +19,11 @@
 # half-finished lib/, an experimental script -- is structurally incapable of reaching the commit,
 # because it was never read.
 #
+# SCOPE, so nobody reads more into this than it does: it gets state onto `main`. It does NOT
+# deploy. This project has no automatic deploy from GitHub, so the agent keeps serving whatever
+# bundle was last built until someone runs `npx vercel@latest --prod --yes` from agent/. What
+# this removes from the loop is the human remembering to commit, not the deploy step.
+#
 # Usage: publish-state.sh [path ...]   (default: the sentinel's state and approval snapshot)
 #
 # Publishing failure is loud but never fatal. A rejected push says nothing about whether the scan
