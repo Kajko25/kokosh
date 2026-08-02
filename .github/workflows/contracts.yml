@@ -1,0 +1,50 @@
+name: contracts
+
+# The other half of this repo had no CI. `contracts/` holds two deployed mainnet contracts --
+# Waypoint (CREATE2 profile registry) and Waymarks (on-chain SVG badge NFT) -- with ten Foundry
+# tests that ran only when someone remembered to run them locally. The agent workflow explicitly
+# scopes itself to `agent/**`, so nothing here was ever checked by a push.
+#
+# Deployed contracts are the one part of this project that cannot be fixed forward: a bad agent
+# deploy is a redeploy, a bad contract is permanent. That asymmetry is the argument for gating
+# the source even though it changes rarely.
+
+on:
+  push:
+    branches: [main]
+    paths: ["contracts/**", ".github/workflows/contracts.yml"]
+  pull_request:
+    paths: ["contracts/**", ".github/workflows/contracts.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: contracts
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # No `submodules: recursive`: forge-std, openzeppelin-contracts and base-std are committed
+      # into contracts/lib as ordinary files here, not wired as submodules, so a plain checkout
+      # already has everything the build needs.
+      - uses: actions/checkout@v7
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Tests
+        run: forge test -vvv
+
+      # Formatting is checked, not applied: a CI that rewrites source is a CI that can surprise
+      # someone mid-review. --check fails loudly and leaves the fix to the author.
+      - name: Formatting
+        run: forge fmt --check
