@@ -107,3 +107,16 @@ count = d.get('count', 0) + 1 if d.get('day') == day else 1
 json.dump({'day': day, 'count': count}, open(path, 'w'))
 "
 fi
+
+# Get the advanced state to where the deployed agent can read it. Only after a successful run:
+# a stand-down or a failed scan has nothing new to say, and on failure the state deliberately
+# did not advance. Last in the cycle because it is the least urgent thing here -- the heartbeat
+# above is what makes the cycle observable, and it should not wait on a network round trip.
+#
+# Set PUBLISH_STATE=0 to run the cycle without touching the remote (local testing, or while
+# someone is deliberately holding main).
+if [ "${PUBLISH_STATE:-1}" != "0" ]; then
+  bash "$(dirname "$0")/publish-state.sh" || true
+else
+  echo "$(date -u -Iseconds) state publish skipped (PUBLISH_STATE=0)"
+fi
