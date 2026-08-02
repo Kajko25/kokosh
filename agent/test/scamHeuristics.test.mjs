@@ -296,3 +296,33 @@ test("the reserve rule reads the symbol too, not only the name", () => {
   const result = classifyToken({ name: "Ordinary Name", symbol: "FEDERAL RESERVE" });
   assert.ok(result.reasons.includes("impersonates_a_state_reserve"));
 });
+
+// --- AI-brand impersonation ---------------------------------------------------------------
+
+test("a token named after an AI lab that has never issued one is flagged", () => {
+  for (const [name, symbol] of [
+    ["OpenAI", "OpenAI"],
+    ["openAI", "openAI"],
+    ["Open AI", "AI"],
+    ["DeepSeek", "DeepSeek"],
+    ["GPT", "GPT"],
+  ]) {
+    assert.ok(
+      classifyToken({ name, symbol }).reasons.includes("impersonates_an_ai_brand"),
+      `${name} should be flagged`
+    );
+  }
+});
+
+test("brand matching folds case and spacing, the evasion these names already use", () => {
+  for (const name of ["open-ai", "OPENAI", "Open.AI", "o p e n a i"]) {
+    assert.ok(classifyToken({ name, symbol: "X" }).reasons.includes("impersonates_an_ai_brand"), name);
+  }
+});
+
+test("the brand must be the whole name, so real holdings containing it survive", () => {
+  // All three are real holdings here, and all three would fall to a substring check.
+  assert.equal(classifyToken({ name: "MikeAI", symbol: "WAZ" }).suspicious, false);
+  assert.equal(classifyToken({ name: "Gizai coin", symbol: "GIZAI" }).suspicious, false);
+  assert.equal(classifyToken({ name: "Art by Virtuals", symbol: "ART" }).suspicious, false);
+});

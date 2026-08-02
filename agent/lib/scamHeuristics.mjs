@@ -82,6 +82,35 @@ const impersonatesAStateReserve = (text) =>
   (RESERVE_WORD.test(text) && RESERVE_QUALIFIER.test(text)) ||
   (STATE_BODY.test(text) && STATE_COMMODITY.test(text));
 
+// AI labs that have never issued a token, sitting unflagged in this wallet as "OpenAI",
+// "openAI", "Open AI", "DeepSeek" and "GPT" twice over. The claim these make is not urgency or
+// a prize -- it is simply being someone else, and no other rule looks for that.
+//
+// Matched on the WHOLE normalised name or symbol, never as a substring, and that is what keeps
+// it safe: "MikeAI", "Gizai coin" and "Art by Virtuals" are real holdings that a contains-check
+// would flag. Normalisation folds case and drops non-alphanumerics, so "Open AI", "open-ai" and
+// "OPENAI" all collapse to the same string -- spacing is the cheapest possible evasion and the
+// one these names already use.
+//
+// The list is deliberately short and only names labs whose absence from every chain is a matter
+// of public record. A brand that might legitimately ship a token later does not belong here:
+// the cost of a wrong entry is flagging a real project, which is how a detector loses its reader.
+const IMPERSONATED_AI_BRANDS = new Set([
+  "openai",
+  "chatgpt",
+  "gpt",
+  "deepseek",
+  "anthropic",
+  "claude",
+  "midjourney",
+  "copilot",
+  "perplexity",
+]);
+
+const normaliseBrand = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+const impersonatesAnAiBrand = (name, symbol) =>
+  IMPERSONATED_AI_BRANDS.has(normaliseBrand(name)) || IMPERSONATED_AI_BRANDS.has(normaliseBrand(symbol));
+
 // Canonical Base mainnet contract addresses for well-known tickers, so an exact ticker
 // match from an unlisted contract gets flagged instead of trusted at face value. Found via
 // a real miss: a token in this wallet at 0x9053A44f...554888eD3 is symbol/name "AAVE"/"AAVE"
@@ -133,6 +162,7 @@ export const RULE_IDS = [
   "pressure_language",
   "non_latin_homoglyph",
   "impersonates_a_state_reserve",
+  "impersonates_an_ai_brand",
   ...Object.keys(KNOWN_TICKER_ADDRESSES).map((ticker) => `impersonates_${ticker}`),
 ];
 
@@ -184,6 +214,9 @@ export function classifyToken({ name = "", symbol = "", address = "" }) {
   }
   if (impersonatesAStateReserve(name) || impersonatesAStateReserve(symbol)) {
     reasons.push("impersonates_a_state_reserve");
+  }
+  if (impersonatesAnAiBrand(name, symbol)) {
+    reasons.push("impersonates_an_ai_brand");
   }
 
   const upperSymbol = symbol.toUpperCase().trim();
