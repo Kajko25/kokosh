@@ -322,6 +322,8 @@ any rule fires:
 | `qr_code_lure` | asks to be scanned (`SCAN ME`, `Scan the QR…`) — the destination is in an image, not the text |
 | `pressure_language` | `don't miss` / `last chance` / `hurry` / `limited time` / `act now` |
 | `non_latin_homoglyph` | name or symbol contains Cyrillic or Greek confusables |
+| `impersonates_a_state_reserve` | claims sovereign or central-bank backing (`Global Digital Oil Reserve`, `Peace Federal Reserve`) |
+| `impersonates_an_ai_brand` | the whole name or symbol *is* an AI lab that has never issued a token (`OpenAI`, `DeepSeek`, `GPT`) |
 | `impersonates_<TICKER>` | symbol matches a known ticker but the contract is **not** its canonical address |
 
 Rules 2–7 all came from reading the wallet's own 274 collections rather than from imagining what
@@ -337,6 +339,13 @@ a scam looks like:
   that needed it (`cakesv4.finance`) is caught by ticker impersonation instead.
 - `quotes_a_cash_amount` requires grouped thousands or a currency word. The looser version — any
   `$` near digits — flagged `EIP-4844 is Based`, whose symbol is `$4844`.
+- `impersonates_a_state_reserve` is a **conjunction**, not a word list: `reserve` plus a
+  sovereign or commodity qualifier. Thirteen holdings match; `Based USA` and `U. S. ZORA RESERVE`
+  deliberately do not, and a list of scary words would have taken both.
+- `impersonates_an_ai_brand` matches the **whole** normalised field, never a substring. `MikeAI`,
+  `Gizai coin` and `Art by Virtuals` are real holdings that a contains-check would flag.
+  Normalising folds case and drops non-alphanumerics, because `Open AI` is the evasion these
+  names already use.
 
 The last rule exists because of a real false negative. An earlier version compared strings only
 and required the symbol to *differ* from the known ticker before flagging — so an exact copy,
@@ -348,6 +357,22 @@ Adding a ticker to that map is the intended way to extend coverage. **Verify the
 on-chain first** (`symbol()`, `name()`, and a holder count) — a wrong entry is worse than a
 missing one, because it flags the genuine token as the impostor. The 15 entries currently there
 were each checked that way.
+
+### Ticker collisions
+
+`findSymbolCollisions(holdings)` answers a question no per-token rule can: **is another held
+contract claiming this same ticker?** `classifyToken` sees one token at a time, so whether
+`Kajko` is impersonating anything — it shares `KJK` with the owner's own `Kajko24` — is
+structurally invisible to it. `/drops` and `/audit` both carry the result.
+
+It is **reported, not accused**. No `reasons` entry, no effect on `hygieneScore`, and a test
+pins that. The wallet also holds `CustomPunks` at two addresses with nothing wrong with either,
+so a collision means *at most one* claimant owns the ticker — never which one. The existing
+rules already say which side looks like a scam; this adds the fact, not a verdict.
+
+Symbols that carry no information (`.`, `-`, empty) are skipped by default. Nine ERC-1155
+contracts here share a symbol of `.` and have nothing to do with one another; counting those
+would bury the four collisions that mean something.
 
 ### Judging a rule change
 
