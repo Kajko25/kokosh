@@ -15,6 +15,7 @@ import { createTtlCache } from "./lib/cache.mjs";
 import { computeHygieneScore } from "./lib/hygieneScore.mjs";
 import { findSymbolCollisions } from "./lib/symbolCollisions.mjs";
 import { readSentinelReport } from "./lib/sentinelReport.mjs";
+import { describeInheritedExposure } from "./lib/inheritedExposure.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -284,7 +285,15 @@ export function makeApp({
       res.status(202).json({ status: "no_sentinel_state", wallet: WALLET });
       return;
     }
-    res.json({ wallet: WALLET, ...report });
+
+    // What the cycle covers, stated next to how recently it ran. A forward-only scan cannot see
+    // allowances that predate its baseline, so "not overdue" on its own overstates the guarantee
+    // -- the daily cycle can be perfectly healthy and still be watching none of the live
+    // exposure. Reading the snapshot here is cheap: it is a committed file, already deployed.
+    const exposureSnapshot = await readExposureReport();
+    const inheritedExposure = describeInheritedExposure(exposureSnapshot, { alertedApprovals: report.alertedApprovals });
+
+    res.json({ wallet: WALLET, ...report, inheritedExposure });
   });
 
   app.get("/drops", async (req, res) => {

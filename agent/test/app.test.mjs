@@ -357,3 +357,22 @@ test("/audit carries collisions without letting them move the hygiene score", as
   // reported as a fact and never scored as a verdict.
   assert.equal(collided.body.hygieneScore, clean.body.hygieneScore);
 });
+
+// --- inherited exposure on /sentinel -------------------------------------------------------
+
+test("/sentinel reports how much live exposure its forward scan cannot see", async () => {
+  // The endpoint reads the committed snapshot and the committed state, both of which ship with
+  // the package, so this asserts the wiring against the real files rather than fixtures.
+  const { status, body } = await get(makeApp({ client: {} }), "/sentinel");
+
+  assert.equal(status, 200);
+  assert.ok(body.inheritedExposure, "the response must carry the coverage boundary");
+  assert.equal(
+    body.inheritedExposure.live,
+    body.inheritedExposure.monitored + body.inheritedExposure.inheritedCount,
+    "every live approval is either monitored or inherited, never both and never neither"
+  );
+  // The WETH -> Aave allowance is the reason this exists: live, real, and outside the cycle.
+  assert.ok(body.inheritedExposure.inheritedCount >= 1);
+  assert.ok(body.inheritedExposure.inherited.every((a) => a.token && a.spender));
+});
